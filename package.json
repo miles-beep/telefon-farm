@@ -1,0 +1,16 @@
+{
+  "name": "telefon-farm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Multilogin profile operator dashboard with safe task queues and profile lifecycle controls.",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "start": "node src/server.mjs",
+    "check": "node src/server.mjs --check",
+    "mlx": "node src/mlx-cli.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

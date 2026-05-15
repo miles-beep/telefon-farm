@@ -1,0 +1,497 @@
+{
+  "info": {
+    "_postman_id": "a40cfb0b-3c17-4d15-9455-telephones001",
+    "name": "Telephones Project - Safe Multilogin Setup",
+    "description": "Postman collection for the local Telephones Project profile review dashboard and safe Multilogin token flow. The local app supports profile sync plus start/stop controls, and intentionally excludes real social-platform actions, quick profile creation, proxy, cookie, script runner, and profile mutation requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Local Sandbox API",
+      "item": [
+        {
+          "name": "Get Dashboard State",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{localBaseUrl}}/api/state",
+            "description": "Returns profiles, posts, saved/comment/repost records, agents, events, detection scores, and dashboard analytics from the local profile review app."
+          }
+        },
+        {
+          "name": "Log In Local Profile",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{localBaseUrl}}/api/profiles/{{localProfileId}}/login",
+            "description": "Marks a verified mock profile as logged in inside the local dashboard."
+          }
+        },
+        {
+          "name": "Record Local Profile Action",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{localProfileId}}\",\n  \"postId\": \"{{localPostId}}\",\n  \"action\": \"save\",\n  \"text\": \"Saving this for later review.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{localBaseUrl}}/api/profile-actions",
+            "description": "Records a local save, comment, repost, like, follow, or view action against a sandbox post."
+          }
+        },
+        {
+          "name": "Run Local Review Task",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platformId\": \"micropost\",\n  \"count\": 8,\n  \"actions\": [\"save\", \"comment\"],\n  \"commentText\": \"Saving this for later review.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{localBaseUrl}}/api/profile-tasks",
+            "description": "Creates a batch of local review records for logged-in mock profiles. This does not contact real social platforms."
+          }
+        },
+        {
+          "name": "Get Multilogin Adapter Config",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{localBaseUrl}}/api/multilogin",
+            "description": "Shows which Multilogin diagnostics and profile controls are exposed by the local app and whether the adapter is enabled."
+          }
+        },
+        {
+          "name": "Run Local Multilogin Diagnostic",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operation\": \"{{localOperation}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{localBaseUrl}}/api/multilogin/read-only",
+            "description": "Runs one guarded Multilogin diagnostic check through the local app. The app must be started with MULTILOGIN_ENABLED=true. Cloud checks need MULTILOGIN_TOKEN in the server environment."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Multilogin Token Setup",
+      "description": "Official flow from Multilogin docs: sign in with an MD5 password hash, use the bearer token, then call Workspace Automation Token with an expiration period.",
+      "item": [
+        {
+          "name": "User Sign In",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.data && response.data.token) {",
+                  "  pm.collectionVariables.set('token', response.data.token);",
+                  "}",
+                  "if (response.data && response.data.refresh_token) {",
+                  "  pm.collectionVariables.set('refreshToken', response.data.refresh_token);",
+                  "}",
+                  "pm.test('User Sign In returned HTTP 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mlxEmail}}\",\n  \"password\": \"{{mlxPasswordMd5}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{mlxBaseUrl}}/user/signin",
+            "description": "Sign in to Multilogin. Per Multilogin docs, the password value must be the MD5 hash of the account password. The test script stores data.token as {{token}} and data.refresh_token as {{refreshToken}}."
+          }
+        },
+        {
+          "name": "Get User Workspaces",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/user/workspaces",
+            "description": "Use this to find the workspace_id if you need to switch workspace before generating the automation token."
+          }
+        },
+        {
+          "name": "User Refresh Token - Switch Workspace",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.data && response.data.token) {",
+                  "  pm.collectionVariables.set('token', response.data.token);",
+                  "}",
+                  "if (response.data && response.data.refresh_token) {",
+                  "  pm.collectionVariables.set('refreshToken', response.data.refresh_token);",
+                  "}",
+                  "pm.test('Refresh token request returned HTTP 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mlxEmail}}\",\n  \"refresh_token\": \"{{refreshToken}}\",\n  \"workspace_id\": \"{{workspaceId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{mlxBaseUrl}}/user/refresh_token",
+            "description": "Optional step for team members or workspace switching. Fill {{workspaceId}} from Get User Workspaces. The test script refreshes {{token}} and {{refreshToken}}."
+          }
+        },
+        {
+          "name": "Workspace Automation Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.data && response.data.token) {",
+                  "  pm.collectionVariables.set('automationToken', response.data.token);",
+                  "}",
+                  "pm.test('Automation token request returned HTTP 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/workspace/automation_token?expiration_period={{expirationPeriod}}",
+            "description": "Generates a longer-lived automation token. Valid expiration values from the docs include 1h, 3h, 5h, 16h, 24h, 48h, 1w, 2w, 3w, 1mo, and no_exp. The test script stores data.token as {{automationToken}}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Multilogin Read-Only Direct Checks",
+      "description": "Direct read-only cloud requests that can use {{automationToken}} after it is generated. These mirror the safe operations exposed by the local adapter.",
+      "item": [
+        {
+          "name": "Browser Core List",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{automationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/bcs/core/list"
+          }
+        },
+        {
+          "name": "Workspace Folders",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{automationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/workspace/folders"
+          }
+        },
+        {
+          "name": "Workspace Statistics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{automationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/workspace/statistics"
+          }
+        },
+        {
+          "name": "Workspace Restrictions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{automationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlxBaseUrl}}/workspace/restrictions"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "localBaseUrl",
+      "value": "http://localhost:5177",
+      "type": "string"
+    },
+    {
+      "key": "localOperation",
+      "value": "launcherVersion",
+      "type": "string"
+    },
+    {
+      "key": "mlxBaseUrl",
+      "value": "https://api.multilogin.com",
+      "type": "string"
+    },
+    {
+      "key": "mlxEmail",
+      "value": "your-email@example.com",
+      "type": "string"
+    },
+    {
+      "key": "mlxPasswordMd5",
+      "value": "md5_hash_of_your_password",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "automationToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "workspaceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "expirationPeriod",
+      "value": "24h",
+      "type": "string"
+    }
+  ]
+}

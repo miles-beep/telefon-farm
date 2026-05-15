@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telephones Project Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Local profile dashboard</p>
+        <h1>Telephones Project</h1>
+      </div>
+      <div class="status-pill" id="serverStatus">Connecting</div>
+    </header>
+
+    <main class="shell">
+      <section class="metrics" aria-label="Overview metrics">
+        <article class="metric">
+          <span>Profiles</span>
+          <strong id="metricProfiles">0</strong>
+        </article>
+        <article class="metric">
+          <span>Ready</span>
+          <strong id="metricLoggedIn">0</strong>
+        </article>
+        <article class="metric">
+          <span>Tasks</span>
+          <strong id="metricSaved">0</strong>
+        </article>
+        <article class="metric warning">
+          <span>Running</span>
+          <strong id="metricReview">0</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="control-column">
+          <section class="panel demo-only">
+            <div class="panel-heading">
+              <h2>Create Profiles</h2>
+            </div>
+            <form id="createAccountsForm" class="form-grid">
+              <label>
+                Platform
+                <select id="platformSelect" name="platformId"></select>
+              </label>
+              <label>
+                Device profile
+                <select id="deviceSelect" name="deviceProfileId"></select>
+              </label>
+              <label>
+                Count
+                <input id="accountCount" name="count" type="number" min="1" max="50" value="4" />
+              </label>
+              <button type="submit">Create</button>
+            </form>
+          </section>
+
+          <section class="panel demo-only">
+            <div class="panel-heading">
+              <h2>Review Task</h2>
+            </div>
+            <form id="profileTaskForm" class="form-grid">
+              <label>
+                Platform
+                <select id="taskPlatformSelect" name="platformId"></select>
+              </label>
+              <label>
+                Items
+                <input id="taskCount" name="count" type="number" min="1" max="100" value="12" />
+              </label>
+              <fieldset class="action-set">
+                <legend>Actions</legend>
+                <label><input type="checkbox" name="taskActions" value="save" checked /> Save</label>
+                <label><input type="checkbox" name="taskActions" value="comment" checked /> Comment</label>
+                <label><input type="checkbox" name="taskActions" value="repost" /> Repost</label>
+                <label><input type="checkbox" name="taskActions" value="like" /> Like</label>
+              </fieldset>
+              <label>
+                Comment or repost text
+                <textarea id="taskCommentText" name="commentText" rows="3">Saving this for later review.</textarea>
+              </label>
+              <button type="submit">Run Local Task</button>
+            </form>
+          </section>
+
+          <section class="panel compact demo-only">
+            <div class="panel-heading">
+              <h2>Tools</h2>
+            </div>
+            <div class="button-row">
+              <button id="baselineButton" type="button">Add Activity</button>
+              <button id="refreshButton" type="button" class="secondary">Refresh</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Multilogin</h2>
+              <span id="multiloginStatus">Disabled</span>
+            </div>
+            <div class="mlx-toolbar">
+              <label>
+                Profile search
+                <input id="multiloginProfileSearch" type="search" placeholder="Name or ID" autocomplete="off" />
+              </label>
+              <button id="multiloginProfilesButton" type="button">Sync Profiles</button>
+            </div>
+            <div id="multiloginProfileList" class="mlx-profile-list"></div>
+            <form id="multiloginForm" class="form-grid">
+              <label>
+                Diagnostics
+                <select id="multiloginOperationSelect" name="operation"></select>
+              </label>
+              <button id="multiloginRunButton" type="submit">Run Check</button>
+            </form>
+            <div id="multiloginResult" class="api-result"></div>
+            <a id="multiloginDocsLink" class="external-link" href="https://documenter.getpostman.com/view/28533318/2s946h9Cv9" target="_blank" rel="noreferrer">Postman docs</a>
+          </section>
+        </aside>
+
+        <section class="main-column">
+          <section class="panel operator-panel">
+            <div class="panel-heading">
+              <h2>Operator Console</h2>
+              <span id="operatorSummary">0 queued</span>
+            </div>
+            <form id="operatorTaskForm" class="operator-grid">
+              <label>
+                Agent
+                <select id="operatorAgentSelect"></select>
+              </label>
+              <label>
+                Profile
+                <select id="operatorProfileSelect"></select>
+              </label>
+              <label>
+                Function
+                <select id="operatorFunctionSelect"></select>
+              </label>
+              <label>
+                Target
+                <input id="operatorTargetUrl" type="url" value="https://x.com/home" autocomplete="off" />
+              </label>
+              <label class="operator-notes">
+                Notes
+                <textarea id="operatorNotes" rows="2" placeholder="Session label or review goal"></textarea>
+              </label>
+              <button type="submit">Queue Task</button>
+            </form>
+            <div class="action-runner">
+              <header>
+                <div>
+                  <strong>Action Runner</strong>
+                  <p id="actionRunnerDetail">Idle</p>
+                </div>
+                <span id="actionRunnerStatus" class="tag idle">idle</span>
+              </header>
+              <div class="button-row inline">
+                <button id="startActionsButton" type="button">Start Actions</button>
+                <button id="markActionDoneButton" type="button" class="secondary" disabled>Done</button>
+                <button id="stopActionsButton" type="button" class="secondary" disabled>Stop</button>
+              </div>
+              <div id="actionRunnerPrompt" class="action-runner-prompt">
+                Select a profile, then start.
+              </div>
+            </div>
+            <div id="operatorAgents" class="operator-agents"></div>
+            <div id="operatorTaskList" class="operator-task-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Profiles</h2>
+              <span id="profileSummary">0 active</span>
+            </div>
+            <div id="profileGrid" class="profile-grid"></div>
+          </section>
+
+          <section class="split-grid posts-layout demo-only">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Post Queue</h2>
+                <span id="postQueueSummary">0 posts</span>
+              </div>
+              <div id="postQueue" class="post-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Saved And Comments</h2>
+                <span id="savedSummary">0 items</span>
+              </div>
+              <div id="savedList" class="event-list"></div>
+            </section>
+          </section>
+
+          <section class="split-grid demo-only">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Recent Activity</h2>
+              </div>
+              <div id="eventList" class="event-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Agent Health</h2>
+                <span id="agentMonitorSummary">0 running</span>
+              </div>
+              <div id="agentRows" class="agent-list"></div>
+            </section>
+          </section>
+
+          <section class="split-grid demo-only">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Detection Scores</h2>
+                <span id="averageScore">Avg 0</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Profile</th>
+                      <th>Platform</th>
+                      <th>Session</th>
+                      <th>Score</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accountRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Mock OTP Queue</h2>
+              </div>
+              <div id="otpList" class="list"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
