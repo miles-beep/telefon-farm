@@ -175,7 +175,9 @@ const ACTIVE_SESSION_STATUSES = new Set(["prepared", "running", "needs_attention
 const PROFILE_STATUSES = new Set([
   "ready",
   "prepared",
+  "starting",
   "running",
+  "stopping",
   "cooldown",
   "needs_attention",
   "needs_login",
@@ -321,6 +323,7 @@ function defaultProfileRecord(profileId) {
     lastOpenedAt: null,
     lastStoppedAt: null,
     lastPromptAt: null,
+    autoStopAt: null,
     completedPrompts: 0,
     skippedPrompts: 0,
     attentionCount: 0,
@@ -382,11 +385,17 @@ function patchProfileRecord(profileId, patch = {}, { save = true } = {}) {
   if (Object.hasOwn(patch, "lastStoppedAt")) record.lastStoppedAt = patch.lastStoppedAt || null;
   if (Object.hasOwn(patch, "lastPromptAt")) record.lastPromptAt = patch.lastPromptAt || null;
   if (Object.hasOwn(patch, "cooldownUntil")) record.cooldownUntil = patch.cooldownUntil || null;
+  if (Object.hasOwn(patch, "autoStopAt")) record.autoStopAt = patch.autoStopAt || null;
 
   if (Number.isFinite(Number(patch.cooldownMinutes))) {
     const minutes = Math.max(0, Math.round(Number(patch.cooldownMinutes)));
     record.cooldownUntil = minutes ? new Date(Date.now() + minutes * 60 * 1000).toISOString() : null;
     record.status = minutes ? "cooldown" : "ready";
+  }
+
+  if (Number.isFinite(Number(patch.autoStopMinutes))) {
+    const minutes = Math.max(0, Math.round(Number(patch.autoStopMinutes)));
+    record.autoStopAt = minutes ? new Date(Date.now() + minutes * 60 * 1000).toISOString() : null;
   }
 
   if (Number.isFinite(Number(patch.completedPromptsDelta))) {
@@ -603,6 +612,7 @@ function getDailyPlan(profileRecords) {
   return {
     readyProfiles: records.filter((record) => record.status === "ready").length,
     runningProfiles: records.filter((record) => record.status === "running").length,
+    startingProfiles: records.filter((record) => record.status === "starting").length,
     cooldownProfiles: records.filter((record) => record.status === "cooldown").length,
     needsLogin: records.filter((record) => record.status === "needs_login").length,
     xMissing: records.filter((record) => record.status === "x_missing").length,
@@ -754,9 +764,10 @@ export function completeOperatorTask(taskId, result = null) {
       profileName: task.profileName,
       profileType: task.profileType,
       folderId: task.folderId,
-      status: "prepared",
+      status: "running",
       issue: "",
-      lastStartedAt: iso()
+      lastStartedAt: iso(),
+      autoStopMinutes: 30
     });
   }
   if (task.functionId === "stop_profile" && task.profileId) {
@@ -767,6 +778,7 @@ export function completeOperatorTask(taskId, result = null) {
       status: "cooldown",
       activeSessionId: "",
       cooldownMinutes: 60,
+      autoStopAt: null,
       lastStoppedAt: iso()
     });
   }
@@ -789,6 +801,17 @@ export function failOperatorTask(taskId, error) {
 
 export function updateOperatorProfileRecord(profileId, patch = {}) {
   return patchProfileRecord(profileId, patch);
+}
+
+export function getProfilesDueForAutoStop(now = new Date()) {
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  return Object.values(operatorState.profileRecords)
+    .map((record) => normalizeProfileStatus(record))
+    .filter((record) => {
+      if (!record.autoStopAt) return false;
+      if (!["starting", "running", "prepared"].includes(record.status)) return false;
+      return new Date(record.autoStopAt).getTime() <= nowMs;
+    });
 }
 
 export function createReviewItem(payload = {}) {
@@ -972,7 +995,8 @@ export function startOperatorSession(sessionId) {
       status: "running",
       issue: "",
       activeSessionId: session.id,
-      lastStartedAt: session.startedAt
+      lastStartedAt: session.startedAt,
+      autoStopMinutes: 30
     },
     { save: false }
   );
@@ -1079,6 +1103,7 @@ export function stopOperatorSession(sessionId, payload = {}) {
       folderId: session.folderId,
       activeSessionId: "",
       cooldownMinutes: Number.isFinite(Number(payload.cooldownMinutes)) ? Number(payload.cooldownMinutes) : 60,
+      autoStopAt: null,
       lastStoppedAt: now,
       issue: ""
     },

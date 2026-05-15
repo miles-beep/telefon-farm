@@ -39,6 +39,7 @@ import {
   createOperatorPlan,
   createReviewItem,
   getActiveOperatorSessionForProfile,
+  getProfilesDueForAutoStop,
   prepareOperatorSession,
   createOperatorTask,
   failOperatorTask,
@@ -90,6 +91,58 @@ if (process.argv.includes("--check")) {
 setInterval(() => {
   tickRunningCampaigns();
 }, 2500);
+
+const autoStopInFlight = new Set();
+
+async function stopProfileForRecord(record, reason) {
+  const profileId = record.profileId;
+  if (!profileId || autoStopInFlight.has(profileId)) return;
+
+  autoStopInFlight.add(profileId);
+  updateOperatorProfileRecord(profileId, {
+    profileName: record.profileName,
+    profileType: record.profileType,
+    folderId: record.folderId,
+    status: "stopping",
+    issue: reason
+  });
+
+  try {
+    if (record.profileType === "mobile") {
+      await stopMultiloginMobileProfile({ profileId });
+    } else {
+      await stopMultiloginProfile({ profileId });
+    }
+    updateOperatorProfileRecord(profileId, {
+      profileName: record.profileName,
+      profileType: record.profileType,
+      folderId: record.folderId,
+      status: "cooldown",
+      issue: "",
+      activeSessionId: "",
+      autoStopAt: null,
+      cooldownMinutes: 60,
+      lastStoppedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    updateOperatorProfileRecord(profileId, {
+      profileName: record.profileName,
+      profileType: record.profileType,
+      folderId: record.folderId,
+      status: "problem",
+      issue: `Auto-stop failed: ${error.message}`,
+      autoStopAt: null
+    });
+  } finally {
+    autoStopInFlight.delete(profileId);
+  }
+}
+
+setInterval(() => {
+  for (const record of getProfilesDueForAutoStop()) {
+    stopProfileForRecord(record, "Auto-stop due after 30 minutes.");
+  }
+}, 15000);
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -426,7 +479,20 @@ async function handleApi(request, response, url) {
             profileId: segments[3],
             folderId: body.folderId
           });
-    sendJson(response, 200, result);
+    const record = updateOperatorProfileRecord(segments[3], {
+      profileName: body.profileName,
+      profileType: body.profileType || "browser",
+      folderId: body.folderId,
+      status: "running",
+      issue: "",
+      lastStartedAt: new Date().toISOString(),
+      autoStopMinutes: 30
+    });
+    sendJson(response, 200, {
+      ...result,
+      record,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 
@@ -436,7 +502,20 @@ async function handleApi(request, response, url) {
       throw new Error("Viewer is only available for mobile cloud phone profiles.");
     }
     const result = await openMultiloginMobileViewer({ profileId: segments[3] });
-    sendJson(response, 200, result);
+    const record = updateOperatorProfileRecord(segments[3], {
+      profileName: body.profileName,
+      profileType: "mobile",
+      folderId: body.folderId,
+      status: "running",
+      issue: "",
+      lastOpenedAt: new Date().toISOString(),
+      autoStopMinutes: 30
+    });
+    sendJson(response, 200, {
+      ...result,
+      record,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 
@@ -451,7 +530,20 @@ async function handleApi(request, response, url) {
       ensureInstalled: body.ensureInstalled === true,
       runUiMacro: body.runUiMacro !== false
     });
-    sendJson(response, 200, result);
+    const record = updateOperatorProfileRecord(segments[3], {
+      profileName: body.profileName,
+      profileType: "mobile",
+      folderId: body.folderId,
+      status: "running",
+      issue: result.response?.payload?.macroWarning || result.response?.payload?.installWarning || "",
+      lastOpenedAt: new Date().toISOString(),
+      autoStopMinutes: 30
+    });
+    sendJson(response, 200, {
+      ...result,
+      record,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 
@@ -475,7 +567,22 @@ async function handleApi(request, response, url) {
         : await stopMultiloginProfile({
             profileId: segments[3]
           });
-    sendJson(response, 200, result);
+    const record = updateOperatorProfileRecord(segments[3], {
+      profileName: body.profileName,
+      profileType: body.profileType || "browser",
+      folderId: body.folderId,
+      status: "cooldown",
+      issue: "",
+      activeSessionId: "",
+      autoStopAt: null,
+      cooldownMinutes: 60,
+      lastStoppedAt: new Date().toISOString()
+    });
+    sendJson(response, 200, {
+      ...result,
+      record,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 

@@ -176,6 +176,12 @@ function formatDuration(ms) {
   return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
 }
 
+function formatFuture(value) {
+  if (!value) return "";
+  const ms = new Date(value).getTime() - Date.now();
+  return ms <= 0 ? "due" : `in ${formatDuration(ms)}`;
+}
+
 function shortId(value) {
   const text = String(value || "");
   return text.length > 13 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
@@ -210,12 +216,14 @@ function renderOptions() {
 function renderMetrics() {
   const analytics = appState.analytics;
   const overview = operatorState?.dailyOverview ?? {};
+  const plan = operatorState?.dailyPlan ?? {};
+  const localActive = Number(plan.runningProfiles || 0) + Number(plan.startingProfiles || 0);
   nodes.metricProfiles.textContent = multiloginProfilesState.total || analytics.totalAccounts;
-  nodes.metricLoggedIn.textContent = overview.activeSessions ?? analytics.loggedInProfiles;
+  nodes.metricLoggedIn.textContent = Math.max(Number(overview.activeSessions || 0), localActive || analytics.loggedInProfiles);
   nodes.metricSaved.textContent = overview.completedPrompts ?? analytics.savedPosts;
   nodes.metricReview.textContent = overview.attentionItems ?? analytics.flaggedAccounts;
   nodes.dailyProfiles.textContent = overview.profilesUsedToday ?? 0;
-  nodes.dailyActive.textContent = overview.activeSessions ?? 0;
+  nodes.dailyActive.textContent = Math.max(Number(overview.activeSessions || 0), localActive);
   nodes.dailyDone.textContent = overview.completedPrompts ?? 0;
   nodes.dailyAttention.textContent = overview.attentionItems ?? 0;
   nodes.profileSummary.textContent = multiloginProfilesState.total
@@ -230,7 +238,7 @@ function renderMetrics() {
 function renderMlxProfileCard(profile, compact = false) {
   const isMobile = profile.profileType === "mobile";
   const canStart = Boolean(profile.id && (isMobile || profile.folderId));
-  const startLabel = isMobile ? "Start Bg" : "Start";
+  const startLabel = "Start 30m";
   const record = profileRecord(profile.id);
   const status = effectiveProfileStatus(profile);
   const details = [
@@ -244,6 +252,8 @@ function renderMlxProfileCard(profile, compact = false) {
     .join(" | ");
   const recordDetails = [
     record?.issue ? `Issue: ${record.issue}` : "",
+    ["starting", "running", "stopping"].includes(status) && record?.lastStartedAt ? `Started ${formatRelative(record.lastStartedAt)}` : "",
+    ["running", "starting", "prepared"].includes(status) && record?.autoStopAt ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
     record?.cooldownUntil && isCooldownActive(record) ? `Cooldown until ${formatTime(record.cooldownUntil)}` : "",
     record?.lastPromptAt ? `Last prompt ${formatRelative(record.lastPromptAt)}` : "",
     record?.completedPrompts ? `${record.completedPrompts} done` : ""
@@ -637,7 +647,7 @@ function effectiveProfileStatus(profile) {
 
 function profileBucketId(profile) {
   const status = effectiveProfileStatus(profile);
-  if (["running", "prepared", "starting"].includes(status)) return "active";
+  if (["running", "prepared", "starting", "stopping"].includes(status)) return "active";
   if (status === "cooldown") return "cooldown";
   if (["needs_login", "x_missing"].includes(status)) return "setup";
   if (["needs_attention", "wrong_screen", "stuck_play_store", "phone_frozen", "problem"].includes(status)) return "attention";
@@ -1376,7 +1386,11 @@ nodes.cooldownProfileButton.addEventListener("click", async () => {
 nodes.clearProfileIssueButton.addEventListener("click", async () => {
   const profile = selectedSessionProfile();
   try {
-    await updateProfileState(profile, { status: "ready", cooldownUntil: null, activeSessionId: "", issue: "" }, "Profile marked ready.");
+    await updateProfileState(
+      profile,
+      { status: "ready", cooldownUntil: null, autoStopAt: null, activeSessionId: "", issue: "" },
+      "Profile marked ready."
+    );
   } catch (error) {
     showToast(error.message);
   }
@@ -1468,10 +1482,15 @@ nodes.openSessionViewerButton.addEventListener("click", async () => {
   if (!profile) return;
 
   try {
-    await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
+    const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
       method: "POST",
-      body: JSON.stringify({ profileType: profile.profileType })
+      body: JSON.stringify({
+        profileName: profile.name,
+        profileType: profile.profileType,
+        folderId: profile.folderId
+      })
     });
+    if (result.snapshot) operatorState = result.snapshot;
     await loadMultiloginProfiles({ quiet: true });
     showToast("Opened Multilogin viewer.");
   } catch (error) {
@@ -1487,11 +1506,13 @@ nodes.openSessionXButton.addEventListener("click", async () => {
     const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
       method: "POST",
       body: JSON.stringify({
+        profileName: profile.name,
         profileType: profile.profileType,
         folderId: profile.folderId,
         runUiMacro: true
       })
     });
+    if (result.snapshot) operatorState = result.snapshot;
     await loadMultiloginProfiles({ quiet: true });
     const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
     showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
@@ -1742,29 +1763,36 @@ document.addEventListener("click", async (event) => {
   }
 
   if (mlxStartButton) {
+    const profile = multiloginProfileById(mlxStartButton.dataset.profileId);
     try {
-      await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStartButton.dataset.profileId)}/start`, {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStartButton.dataset.profileId)}/start`, {
         method: "POST",
         body: JSON.stringify({
+          profileName: profile?.name || "",
           folderId: mlxStartButton.dataset.folderId,
           profileType: mlxStartButton.dataset.profileType
         })
       });
+      if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
-      showToast(mlxStartButton.dataset.profileType === "mobile" ? "Started in background." : "Started Multilogin profile.");
+      showToast("Started. Auto-stop in 30m.");
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (mlxOpenViewerButton) {
+    const profile = multiloginProfileById(mlxOpenViewerButton.dataset.profileId);
     try {
-      await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenViewerButton.dataset.profileId)}/viewer`, {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenViewerButton.dataset.profileId)}/viewer`, {
         method: "POST",
         body: JSON.stringify({
-          profileType: mlxOpenViewerButton.dataset.profileType
+          profileName: profile?.name || "",
+          profileType: mlxOpenViewerButton.dataset.profileType,
+          folderId: profile?.folderId || ""
         })
       });
+      if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
       showToast("Opened Multilogin viewer.");
     } catch (error) {
@@ -1773,15 +1801,18 @@ document.addEventListener("click", async (event) => {
   }
 
   if (mlxOpenXButton) {
+    const profile = multiloginProfileById(mlxOpenXButton.dataset.profileId);
     try {
       const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenXButton.dataset.profileId)}/open-x`, {
         method: "POST",
         body: JSON.stringify({
+          profileName: profile?.name || "",
           profileType: mlxOpenXButton.dataset.profileType,
           folderId: mlxOpenXButton.dataset.folderId,
           runUiMacro: true
         })
       });
+      if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
       const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
       showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
@@ -1791,13 +1822,17 @@ document.addEventListener("click", async (event) => {
   }
 
   if (mlxStopButton) {
+    const profile = multiloginProfileById(mlxStopButton.dataset.profileId);
     try {
-      await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStopButton.dataset.profileId)}/stop`, {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStopButton.dataset.profileId)}/stop`, {
         method: "POST",
         body: JSON.stringify({
-          profileType: mlxStopButton.dataset.profileType
+          profileName: profile?.name || "",
+          profileType: mlxStopButton.dataset.profileType,
+          folderId: profile?.folderId || ""
         })
       });
+      if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
       showToast("Stopped Multilogin profile.");
     } catch (error) {

@@ -96,12 +96,14 @@ npm run mlx -- session-stop <session_id>
 
 ## Mobile Cloud-Phone Controls
 
-- `Start Bg`: calls `xcli mobile-profiles-phone-start`.
+- `Start 30m`: calls `xcli mobile-profiles-phone-start`, marks the profile running locally, and sets a 30-minute auto-stop timer.
 - `Viewer`: calls `xcli mobile-phone-launch` and opens the visible cloud-phone window.
 - `Open X`: opens the visible cloud-phone window, presses Android Home, swipes to the app page, and taps the X icon using a local macOS UI macro.
 - `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
 - `Stop`: calls `xcli mobile-phone-shutdown`.
 
-Multilogin may reject `Start Bg` with an internal server error for some profiles. In that case use `Viewer`, which is the documented cloud-phone launch path.
+Multilogin may reject the background start path with an internal server error for some profiles. In that case use `Viewer`, which is the documented cloud-phone launch path.
 
 The `Open X` macro requires macOS Accessibility permission for the terminal or app process that runs the dashboard. It does not like, comment, repost, save, follow, or scroll; it only performs the repetitive phone setup clicks.
+
+Started or opened profiles are tracked locally with `autoStopAt`. The server checks that field and requests a Multilogin stop when the 30-minute window expires.

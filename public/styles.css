@@ -935,6 +935,7 @@ tbody tr:hover {
 .tag.queued,
 .tag.prepared,
 .tag.starting,
+.tag.stopping,
 .tag.skipped,
 .tag.stopped {
   background: #edf1f5;

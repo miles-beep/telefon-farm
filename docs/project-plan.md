@@ -26,6 +26,7 @@ Build an easy local dashboard for monitoring Multilogin profiles. The dashboard 
    - Start Work one-click flow for prepare/start/session-run
    - Open Next Ready Profile flow for picking the next ready profile and opening mobile X
    - Cooldown and recovery controls for common setup issues
+   - 30-minute auto-stop lifecycle for started/opened profiles
    - Profile buckets for Ready, Active, Cooldown, Setup, and Attention
    - Daily overview for active sessions, completed prompts, and attention items
    - Safety notes before starting a session
