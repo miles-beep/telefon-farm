@@ -10,6 +10,8 @@ function usage() {
   npm run mlx -- profiles [search text]
   npm run mlx -- start <profile_id> [folder_id]
   npm run mlx -- stop <profile_id>
+  npm run mlx -- open-x <profile_id>
+  npm run mlx -- install-x <profile_id>
   npm run mlx -- operator
   npm run mlx -- work <profile_id> [preset_id]
   npm run mlx -- plan <profile_id> [preset_id]
@@ -186,6 +188,23 @@ async function main() {
     });
     console.log(`Stopped ${profileId}`);
     console.log(JSON.stringify(result.response.payload, null, 2));
+    return;
+  }
+
+  if (command === "open-x" || command === "install-x") {
+    const [profileId] = args;
+    if (!profileId) throw new Error(`Pass a profile_id to ${command}.`);
+    const profile = await resolveProfile(profileId);
+    const endpoint = command === "open-x" ? "open-x" : "install-x";
+    const result = await request(`/api/multilogin/profiles/${encodeURIComponent(profileId)}/${endpoint}`, {
+      method: "POST",
+      body: JSON.stringify({
+        profileType: "mobile",
+        folderId: profile.folderId,
+        runUiMacro: command === "open-x"
+      })
+    });
+    console.log(JSON.stringify(result.response?.payload || result.response || result, null, 2));
     return;
   }
 

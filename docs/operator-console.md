@@ -81,6 +81,10 @@ npm run mlx -- session-stop <session_id>
 
 - `Start Bg`: calls `xcli mobile-profiles-phone-start`.
 - `Viewer`: calls `xcli mobile-phone-launch` and opens the visible cloud-phone window.
+- `Open X`: opens the visible cloud-phone window, presses Android Home, swipes to the app page, and taps the X icon using a local macOS UI macro.
+- `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
 - `Stop`: calls `xcli mobile-phone-shutdown`.
 
 Multilogin may reject `Start Bg` with an internal server error for some profiles. In that case use `Viewer`, which is the documented cloud-phone launch path.
+
+The `Open X` macro requires macOS Accessibility permission for the terminal or app process that runs the dashboard. It does not like, comment, repost, save, follow, or scroll; it only performs the repetitive phone setup clicks.

@@ -31,6 +31,8 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Presets: Review mode, Light warmup, Comment drafting, and No engagement
 - Dashboard controls to start and stop Multilogin profiles
 - Mobile cloud-phone **Start Bg** uses Multilogin's background/proxy start path when available; **Viewer** opens the visible phone window when needed
+- Mobile cloud-phone **Open X** opens the viewer and runs a local macOS click macro to bring X forward
+- **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
 - Local operator state persisted to `data/operator-state.json` and ignored by git
@@ -76,6 +78,8 @@ npm run mlx -- status
 npm run mlx -- profiles
 npm run mlx -- start <profile_id>
 npm run mlx -- stop <profile_id>
+npm run mlx -- open-x <mobile_profile_id>
+npm run mlx -- install-x <mobile_profile_id>
 npm run mlx -- operator
 npm run mlx -- work <profile_id> review_mode
 npm run mlx -- prepare <profile_id> review_mode

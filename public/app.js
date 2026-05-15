@@ -37,6 +37,8 @@ const nodes = {
   runSessionStartTaskButton: $("#runSessionStartTaskButton"),
   startSessionButton: $("#startSessionButton"),
   openSessionViewerButton: $("#openSessionViewerButton"),
+  openSessionXButton: $("#openSessionXButton"),
+  installSessionXButton: $("#installSessionXButton"),
   stopSessionButton: $("#stopSessionButton"),
   sessionStatusTitle: $("#sessionStatusTitle"),
   sessionStatusDetail: $("#sessionStatusDetail"),
@@ -245,6 +247,16 @@ function renderMlxProfileCard(profile, compact = false) {
                   data-profile-id="${escapeHtml(profile.id)}"
                   data-profile-type="mobile"
                 >Viewer</button>`
+              : ""
+          }
+          ${
+            isMobile
+              ? `<button
+                  class="secondary mlx-open-x"
+                  data-profile-id="${escapeHtml(profile.id)}"
+                  data-folder-id="${escapeHtml(profile.folderId)}"
+                  data-profile-type="mobile"
+                >Open X</button>`
               : ""
           }
           <button
@@ -654,6 +666,8 @@ function renderSessionConsole() {
   nodes.runSessionStartTaskButton.disabled = !canRunStartTask;
   nodes.startSessionButton.disabled = !canStart;
   nodes.openSessionViewerButton.disabled = !profile || profile.profileType !== "mobile";
+  nodes.openSessionXButton.disabled = !profile || profile.profileType !== "mobile";
+  nodes.installSessionXButton.disabled = !profile || profile.profileType !== "mobile" || !profile.folderId;
   nodes.stopSessionButton.disabled = !canStop;
   nodes.sessionPromptDoneButton.disabled = !canRecordPrompt;
   nodes.sessionPromptSkipButton.disabled = !canRecordPrompt;
@@ -975,7 +989,9 @@ function sessionPayload(profile) {
     profileType: profile.profileType || "browser",
     folderId: profile.folderId || "",
     targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
-    notes: nodes.sessionNotes.value
+    notes: nodes.sessionNotes.value,
+    openX: profile.profileType === "mobile",
+    runUiMacro: true
   };
 }
 
@@ -1216,6 +1232,45 @@ nodes.openSessionViewerButton.addEventListener("click", async () => {
   }
 });
 
+nodes.openSessionXButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  if (!profile) return;
+
+  try {
+    const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
+      method: "POST",
+      body: JSON.stringify({
+        profileType: profile.profileType,
+        folderId: profile.folderId,
+        runUiMacro: true
+      })
+    });
+    await loadMultiloginProfiles({ quiet: true });
+    const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+    showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.installSessionXButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  if (!profile) return;
+
+  try {
+    await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/install-x`, {
+      method: "POST",
+      body: JSON.stringify({
+        profileType: profile.profileType,
+        folderId: profile.folderId
+      })
+    });
+    showToast("X install requested for this mobile group.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
 async function recordSessionPrompt(outcome) {
   const session = selectedSession();
   if (!session) return;
@@ -1314,6 +1369,7 @@ document.addEventListener("click", async (event) => {
   const agentButton = event.target.closest(".agent-status-action");
   const mlxStartButton = event.target.closest(".mlx-start-profile");
   const mlxOpenViewerButton = event.target.closest(".mlx-open-viewer");
+  const mlxOpenXButton = event.target.closest(".mlx-open-x");
   const mlxStopButton = event.target.closest(".mlx-stop-profile");
   const queueReviewButton = event.target.closest(".queue-profile-review");
   const operatorRunButton = event.target.closest(".operator-run-task");
@@ -1414,6 +1470,24 @@ document.addEventListener("click", async (event) => {
       });
       await loadMultiloginProfiles({ quiet: true });
       showToast("Opened Multilogin viewer.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (mlxOpenXButton) {
+    try {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenXButton.dataset.profileId)}/open-x`, {
+        method: "POST",
+        body: JSON.stringify({
+          profileType: mlxOpenXButton.dataset.profileType,
+          folderId: mlxOpenXButton.dataset.folderId,
+          runUiMacro: true
+        })
+      });
+      await loadMultiloginProfiles({ quiet: true });
+      const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+      showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
     } catch (error) {
       showToast(error.message);
     }

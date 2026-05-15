@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 export const MULTILOGIN_DOC_URL = "https://documenter.getpostman.com/view/28533318/2s946h9Cv9";
@@ -9,6 +10,9 @@ export const MULTILOGIN_DOC_URL = "https://documenter.getpostman.com/view/285333
 const DEFAULT_CLOUD_BASE_URL = "https://api.multilogin.com";
 const DEFAULT_LAUNCHER_BASE_URL = "https://launcher.mlx.yt:45001";
 const execFileAsync = promisify(execFile);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MOBILE_X_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
+const DEFAULT_X_APP_ID = "1556606452280463360";
 
 const READ_ONLY_OPERATIONS = {
   launcherVersion: {
@@ -398,6 +402,47 @@ function parseXcliBlocks(stdout) {
     .filter((fields) => fields.ID);
 }
 
+function parseMobileAppList(stdout) {
+  return String(stdout)
+    .split(/\n(?=\d+\.\s+)/)
+    .map((block) => {
+      const title = block.match(/^\s*\d+\.\s+(.+)$/m)?.[1]?.trim() || "";
+      const appId = block.match(/^\s*-\s+ID:\s*(\d+)/m)?.[1] || "";
+      const versions = [...block.matchAll(/\*\s+(.+?)\s+\(Code\s+[^,]+,\s+ID\s+(\d+)\)/g)].map((match) => ({
+        label: match[1].trim(),
+        id: match[2]
+      }));
+      return {
+        title,
+        id: appId,
+        versions
+      };
+    })
+    .filter((app) => app.id && app.title);
+}
+
+async function findMobileXApp(env = process.env) {
+  const configuredAppId = String(env.MULTILOGIN_X_APP_ID || "").trim();
+  const configuredVersionId = String(env.MULTILOGIN_X_APP_VERSION_ID || "").trim();
+  if (configuredAppId && configuredVersionId) {
+    return {
+      id: configuredAppId,
+      versionId: configuredVersionId,
+      title: "X(Twitter)"
+    };
+  }
+
+  const stdout = await runXcli(["mobile-profiles-app-list", "--key", "Twitter", "--page_size", "20"], env);
+  const app = parseMobileAppList(stdout).find((item) => /(^x\b|twitter)/i.test(item.title)) ?? null;
+  const version = app?.versions?.[0] ?? null;
+
+  return {
+    id: configuredAppId || app?.id || DEFAULT_X_APP_ID,
+    versionId: configuredVersionId || version?.id || "",
+    title: app?.title || "X(Twitter)"
+  };
+}
+
 function mapMobileStatus(status) {
   const raw = String(status || "unknown");
   const known = {
@@ -591,6 +636,127 @@ export async function openMultiloginMobileViewer({ profileId } = {}, env = proce
       payload: { message: "Mobile profile viewer launch requested." }
     },
     output: stdout ? "ok" : "ok"
+  };
+}
+
+export async function installMultiloginMobileXApp({ groupId } = {}, env = process.env) {
+  if (!groupId) {
+    throw new Error("Installing X on a Multilogin mobile profile requires the mobile group ID.");
+  }
+
+  const app = await findMobileXApp(env);
+  if (!app.versionId) {
+    throw new Error("Could not resolve a Multilogin X(Twitter) app version ID. Set MULTILOGIN_X_APP_VERSION_ID to override.");
+  }
+
+  const stdout = await runXcli(
+    ["mobile-profiles-app-install", "--id", app.id, "--version_id", app.versionId, "--install_group_ids", String(groupId)],
+    env
+  );
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Install X mobile app",
+      method: "xcli",
+      base: "local",
+      path: "mobile-profiles-app-install"
+    },
+    app,
+    response: {
+      ok: true,
+      httpStatus: 200,
+      statusText: "OK",
+      payload: { message: `X app install requested for mobile group ${groupId}.` }
+    },
+    output: stdout ? "ok" : "ok"
+  };
+}
+
+async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
+  if (process.platform !== "darwin") {
+    throw new Error("The mobile X opener macro is only available on macOS.");
+  }
+  if (!existsSync(MOBILE_X_MACRO_PATH)) {
+    throw new Error(`Mobile X opener macro was not found at ${MOBILE_X_MACRO_PATH}.`);
+  }
+
+  const { stdout } = await execFileAsync("/usr/bin/swift", [MOBILE_X_MACRO_PATH, String(profileId || "")], {
+    timeout: Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000),
+    maxBuffer: 256 * 1024
+  });
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Open X with local macOS UI macro",
+      method: "swift",
+      base: "local",
+      path: "scripts/open-mobile-x.swift"
+    },
+    response: {
+      ok: true,
+      httpStatus: 200,
+      statusText: "OK",
+      payload: { message: "Mobile X opener macro completed." }
+    },
+    output: stdout.trim() || "ok"
+  };
+}
+
+export async function openMultiloginMobileX({ profileId, groupId, ensureInstalled = false, runUiMacro = true } = {}, env = process.env) {
+  if (!profileId) {
+    throw new Error("Opening X on a Multilogin mobile profile requires profileId.");
+  }
+
+  let installResult = null;
+  let installWarning = null;
+  if (ensureInstalled) {
+    try {
+      installResult = await installMultiloginMobileXApp({ groupId }, env);
+    } catch (error) {
+      installWarning = error.message;
+    }
+  }
+
+  const viewerResult = await openMultiloginMobileViewer({ profileId }, env);
+  let macroResult = null;
+  let macroWarning = null;
+
+  if (runUiMacro) {
+    await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_UI_MACRO_DELAY_MS || 1800)));
+    try {
+      macroResult = await runMobileXUiMacro({ profileId }, env);
+    } catch (error) {
+      macroWarning = error.message;
+    }
+  }
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Open mobile profile to X",
+      method: "xcli+macro",
+      base: "local",
+      path: "mobile-phone-launch + scripts/open-mobile-x.swift"
+    },
+    response: {
+      ok: !macroWarning,
+      httpStatus: macroWarning ? 207 : 200,
+      statusText: macroWarning ? "Partial" : "OK",
+      payload: {
+        message: macroWarning
+          ? "Viewer opened, but the local X opener macro did not complete."
+          : "Viewer opened and X opener macro completed.",
+        installWarning,
+        macroWarning
+      }
+    },
+    viewerResult,
+    installResult,
+    macroResult,
+    installWarning,
+    macroWarning
   };
 }
 

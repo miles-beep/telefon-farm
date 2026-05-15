@@ -24,7 +24,9 @@ import {
 import {
   callMultiloginReadOnly,
   getMultiloginOverview,
+  installMultiloginMobileXApp,
   openMultiloginMobileViewer,
+  openMultiloginMobileX,
   searchMultiloginProfiles,
   startMultiloginMobileProfile,
   startMultiloginProfile,
@@ -208,6 +210,7 @@ async function handleApi(request, response, url) {
     }
 
     let startResult = null;
+    let openXResult = null;
     if (startTask && ["queued", "failed"].includes(startTask.status)) {
       try {
         startResult = await executeOperatorTask(startTask.id);
@@ -224,10 +227,20 @@ async function handleApi(request, response, url) {
     }
 
     const startedSession = startOperatorSession(session.id);
+    if (body.openX && startedSession.profileType === "mobile") {
+      openXResult = await openMultiloginMobileX({
+        profileId: startedSession.profileId,
+        groupId: body.groupId || body.folderId || startedSession.folderId,
+        ensureInstalled: body.ensureXInstalled === true,
+        runUiMacro: body.runUiMacro !== false
+      });
+    }
+
     sendJson(response, 200, {
       session: startedSession,
       startTask: startResult?.task || startTask,
       startResult: startResult?.result || null,
+      openXResult,
       snapshot: getOperatorSnapshot()
     });
     return;
@@ -350,6 +363,33 @@ async function handleApi(request, response, url) {
       throw new Error("Viewer is only available for mobile cloud phone profiles.");
     }
     const result = await openMultiloginMobileViewer({ profileId: segments[3] });
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "open-x") {
+    const body = await readJsonBody(request);
+    if (body.profileType !== "mobile") {
+      throw new Error("Open X is only available for mobile cloud phone profiles.");
+    }
+    const result = await openMultiloginMobileX({
+      profileId: segments[3],
+      groupId: body.groupId || body.folderId,
+      ensureInstalled: body.ensureInstalled === true,
+      runUiMacro: body.runUiMacro !== false
+    });
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "install-x") {
+    const body = await readJsonBody(request);
+    if (body.profileType !== "mobile") {
+      throw new Error("Install X is only available for mobile cloud phone profiles.");
+    }
+    const result = await installMultiloginMobileXApp({
+      groupId: body.groupId || body.folderId
+    });
     sendJson(response, 200, result);
     return;
   }

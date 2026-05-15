@@ -85,6 +85,7 @@ Example body:
 - Mobile cloud phone background start: `xcli mobile-profiles-phone-start --ids <profile_id>`
 - Mobile cloud phone stop: `xcli mobile-phone-shutdown --ids <profile_id>`
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
+- Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
 
 ## Explicitly Not Implemented
 
