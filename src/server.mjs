@@ -29,7 +29,6 @@ import {
   openMultiloginMobileViewer,
   openMultiloginMobileX,
   searchMultiloginProfiles,
-  startMultiloginMobileProfile,
   startMultiloginProfile,
   stopMultiloginMobileProfile,
   stopMultiloginProfile
@@ -205,52 +204,40 @@ async function executeOperatorTask(taskId) {
 }
 
 async function startMobileProfileWithFallback({ profileId } = {}) {
-  try {
-    return await startMultiloginMobileProfile({ profileId });
-  } catch (error) {
-    if (/disabled|not found/i.test(error.message)) throw error;
-    try {
-      const viewerResult = await openMultiloginMobileViewer({ profileId });
-      return {
-        ...viewerResult,
-        fallback: true,
-        fallbackReason: error.message,
-        response: {
-          ...viewerResult.response,
-          payload: {
-            ...(viewerResult.response?.payload || {}),
-            message: "Background start failed; opened Viewer instead.",
-            startWarning: error.message
-          }
-        }
-      };
-    } catch (viewerError) {
-      if (/disabled|not found/i.test(viewerError.message)) throw viewerError;
-      return {
-        requestedAt: new Date().toISOString(),
-        fallback: true,
-        uncertain: true,
-        fallbackReason: error.message,
-        viewerError: viewerError.message,
-        request: {
-          label: "Start mobile profile with unconfirmed result",
-          method: "xcli",
-          base: "local",
-          path: "mobile-profiles-phone-start"
-        },
-        response: {
-          ok: false,
-          httpStatus: 202,
-          statusText: "Unconfirmed",
-          payload: {
-            message: "Start was requested, but Multilogin did not return a usable launch URL.",
-            startWarning: error.message,
-            viewerWarning: viewerError.message
-          }
-        }
-      };
-    }
+  return openMultiloginMobileViewer({ profileId });
+}
+
+function statusPatchForMobileStatus(status, fallback = {}) {
+  const mappedStatus = status?.status || "";
+  const patch = {
+    profileName: fallback.profileName,
+    profileType: "mobile",
+    folderId: fallback.folderId,
+    lastSeenAt: new Date().toISOString()
+  };
+
+  if (["starting", "running", "stopping"].includes(mappedStatus)) {
+    patch.status = mappedStatus;
+    patch.issue = "";
+    if (mappedStatus === "running" && !fallback.autoStopAt) patch.autoStopMinutes = 30;
+    return patch;
   }
+
+  if (["ready", "stopped"].includes(mappedStatus)) {
+    patch.status = "ready";
+    patch.issue = "";
+    patch.autoStopAt = null;
+    return patch;
+  }
+
+  if (mappedStatus === "error") {
+    patch.status = "problem";
+    patch.issue = "Multilogin reports a mobile profile error.";
+    patch.autoStopAt = null;
+    return patch;
+  }
+
+  return patch;
 }
 
 async function verifyMobileProfileStatus(profileId) {
@@ -264,6 +251,24 @@ async function verifyMobileProfileStatus(profileId) {
       warning: error.message
     };
   }
+}
+
+async function syncMobileProfileStatuses(profileIds = []) {
+  const ids = [...new Set(profileIds.map((profileId) => String(profileId || "").trim()).filter(Boolean))];
+  const result = await getMultiloginMobileProfileStatuses(ids);
+  const snapshotBefore = getOperatorSnapshot();
+
+  for (const profileId of ids) {
+    const status = result.statuses?.[profileId];
+    if (!status) continue;
+    const record = snapshotBefore.profileRecords?.[profileId] || {};
+    updateOperatorProfileRecord(profileId, statusPatchForMobileStatus(status, record));
+  }
+
+  return {
+    ...result,
+    snapshot: getOperatorSnapshot()
+  };
 }
 
 async function handleApi(request, response, url) {
@@ -422,7 +427,7 @@ async function handleApi(request, response, url) {
         profileId: startedSession.profileId,
         groupId: body.groupId || body.folderId || startedSession.folderId,
         ensureInstalled: body.ensureXInstalled === true,
-        runUiMacro: body.runUiMacro !== false
+        runUiMacro: body.runUiMacro === true
       });
     }
 
@@ -535,6 +540,16 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  if (method === "GET" && url.pathname === "/api/multilogin/mobile-statuses") {
+    const ids = (url.searchParams.get("ids") || "")
+      .split(",")
+      .map((profileId) => profileId.trim())
+      .filter(Boolean);
+    const result = await syncMobileProfileStatuses(ids);
+    sendJson(response, 200, result);
+    return;
+  }
+
   if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "start") {
     const body = await readJsonBody(request);
     const startedAt = new Date().toISOString();
@@ -563,8 +578,8 @@ async function handleApi(request, response, url) {
       folderId: body.folderId,
       status: "running",
       issue:
-        result.response?.payload?.startWarning || result.response?.payload?.viewerWarning
-          ? "Started locally, but Multilogin did not return a clean confirmation."
+        result.response?.payload?.startWarning || result.response?.payload?.viewerWarning || result.response?.payload?.launchWarning
+          ? "Viewer opened, but Multilogin did not return a clean confirmation."
           : "",
       lastStartedAt: startedAt,
       autoStopMinutes: 30
@@ -626,7 +641,7 @@ async function handleApi(request, response, url) {
       profileId: segments[3],
       groupId: body.groupId || body.folderId,
       ensureInstalled: body.ensureInstalled === true,
-      runUiMacro: body.runUiMacro !== false
+      runUiMacro: body.runUiMacro === true
     });
     const verifiedStatus = await verifyMobileProfileStatus(segments[3]);
     const record = updateOperatorProfileRecord(segments[3], {
@@ -635,8 +650,8 @@ async function handleApi(request, response, url) {
       folderId: body.folderId,
       status: "running",
       issue:
-        result.response?.payload?.viewerWarning ||
         result.response?.payload?.macroWarning ||
+        result.response?.payload?.viewerWarning ||
         result.response?.payload?.installWarning ||
         "",
       lastOpenedAt: new Date().toISOString(),

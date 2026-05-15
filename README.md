@@ -27,6 +27,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
+- **Live Agent** strip at the top of the dashboard for active profiles, Multilogin status checks, auto-stop timers, and latest reports
 - **Priority Board** for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
@@ -36,10 +37,10 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Server-side random prompt planning: one reusable start task, then random local prompts
 - Presets: Review mode, Light warmup, Comment drafting, and No engagement
 - Dashboard controls to start and stop Multilogin profiles
-- Mobile cloud-phone **Start 30m** uses Multilogin's background/proxy start path when available; **Viewer** opens the visible phone window when needed
-- If Multilogin rejects background start for a mobile profile, **Start 30m** automatically falls back to Viewer
+- Mobile cloud-phone **Start + View** opens the visible Multilogin phone window so the session can be tested directly
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
-- Mobile cloud-phone **Open X** opens the viewer and runs a local macOS click macro to bring X forward
+- Mobile cloud-phone **Open Phone** opens the viewer without requesting macOS Accessibility control; tap X manually inside the phone
+- A local `osascript` click macro exists for opt-in terminal experiments only, but the dashboard does not request computer-control permissions
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
@@ -56,12 +57,12 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 3. Use **Sync Profiles** in the Multilogin panel.
 4. In **Profile Console**, select a profile and preset.
 5. Click **Start Work** to prepare the profile, run the start task, and begin the session runner.
-6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile and open X.
+6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile and open the visible phone.
 7. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** for mobile profiles when you want to watch the phone.
+11. Use **Viewer** or **Open Phone** for mobile profiles when you want to watch the phone. The **Live Agent** strip will show active profiles and the latest report.
 12. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.

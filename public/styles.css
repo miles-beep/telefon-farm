@@ -321,6 +321,100 @@ h2 {
   border-color: #b8c8c2;
 }
 
+.live-agent-panel {
+  margin-bottom: 10px;
+  border-color: #9fbcb3;
+}
+
+.live-agent-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 10px;
+}
+
+.live-empty,
+.live-agent-card {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  padding: 11px;
+}
+
+.live-empty {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.live-empty strong {
+  color: var(--text);
+}
+
+.live-agent-card {
+  display: grid;
+  gap: 10px;
+}
+
+.live-agent-card.running,
+.live-agent-card.starting,
+.live-agent-card.prepared {
+  border-color: #83bcae;
+  background: #f1faf6;
+}
+
+.live-agent-card.needs_attention,
+.live-agent-card.problem {
+  border-color: #dfb8b1;
+  background: #fff7f5;
+}
+
+.live-agent-card header,
+.live-agent-card footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.live-agent-card header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.live-agent-card footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.live-agent-card footer button {
+  min-height: 34px;
+}
+
+.live-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.live-facts span,
+.live-report {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.live-report {
+  border-radius: 7px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .daily-overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

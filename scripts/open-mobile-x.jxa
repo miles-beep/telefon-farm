@@ -1,0 +1,135 @@
+ObjC.import("ApplicationServices");
+
+const app = Application.currentApplication();
+app.includeStandardAdditions = true;
+
+const profileId = $.NSProcessInfo.processInfo.arguments.js.slice(4)[0] || "";
+
+function fail(message) {
+  throw new Error(message);
+}
+
+if (!$.AXIsProcessTrusted()) {
+  fail(
+    "macOS Accessibility permission is required for Open X. Allow osascript or your terminal in System Settings > Privacy & Security > Accessibility."
+  );
+}
+
+function wait(seconds) {
+  app.delay(seconds);
+}
+
+function point(x, y) {
+  return $.CGPointMake(Math.round(x), Math.round(y));
+}
+
+function postMouse(type, x, y) {
+  const event = $.CGEventCreateMouseEvent(null, type, point(x, y), $.kCGMouseButtonLeft);
+  $.CGEventPost($.kCGHIDEventTap, event);
+}
+
+function moveTo(x, y) {
+  postMouse($.kCGEventMouseMoved, x, y);
+}
+
+function clickAt(x, y) {
+  moveTo(x, y);
+  wait(0.06);
+  postMouse($.kCGEventLeftMouseDown, x, y);
+  wait(0.08);
+  postMouse($.kCGEventLeftMouseUp, x, y);
+}
+
+function drag(startX, startY, endX, endY) {
+  moveTo(startX, startY);
+  wait(0.08);
+  postMouse($.kCGEventLeftMouseDown, startX, startY);
+  const steps = 18;
+  for (let index = 1; index <= steps; index += 1) {
+    const progress = index / steps;
+    const x = startX + (endX - startX) * progress;
+    const y = startY + (endY - startY) * progress;
+    postMouse($.kCGEventLeftMouseDragged, x, y);
+    wait(0.018);
+  }
+  postMouse($.kCGEventLeftMouseUp, endX, endY);
+}
+
+function multiloginProcess() {
+  const systemEvents = Application("System Events");
+  const processes = systemEvents.processes.whose({
+    name: {
+      _contains: "Multilogin"
+    }
+  })();
+
+  if (!processes.length) {
+    fail("Could not find a running Multilogin process. Open the mobile viewer first.");
+  }
+
+  return processes[0];
+}
+
+function mobileWindowFrame() {
+  try {
+    const process = multiloginProcess();
+    process.frontmost = true;
+    wait(0.35);
+
+    const windows = process.windows();
+    if (!windows.length) {
+      fail("Could not find an open Multilogin mobile phone window.");
+    }
+
+    let selectedWindow = windows[0];
+    if (profileId) {
+      for (const window of windows) {
+        const title = String(window.name() || "");
+        if (title.includes(profileId)) {
+          selectedWindow = window;
+          break;
+        }
+      }
+    }
+
+    const position = selectedWindow.position();
+    const size = selectedWindow.size();
+    return {
+      x: Number(position[0]),
+      y: Number(position[1]),
+      width: Number(size[0]),
+      height: Number(size[1])
+    };
+  } catch (error) {
+    fail(
+      "macOS Accessibility permission is required for Open X. Allow osascript or your terminal in System Settings > Privacy & Security > Accessibility. " +
+        error.message
+    );
+  }
+}
+
+const windowFrame = mobileWindowFrame();
+const phoneLeft = windowFrame.x + 8;
+const phoneTop = windowFrame.y + 46;
+const phoneWidth = Math.max(260, windowFrame.width - 54);
+const phoneHeight = Math.max(480, windowFrame.height - 62);
+
+const homeX = phoneLeft + phoneWidth * 0.5;
+const homeY = phoneTop + phoneHeight * 0.965;
+const swipeY = phoneTop + phoneHeight * 0.52;
+const rightSwipeStartX = phoneLeft + phoneWidth * 0.2;
+const rightSwipeEndX = phoneLeft + phoneWidth * 0.82;
+const leftSwipeStartX = phoneLeft + phoneWidth * 0.82;
+const leftSwipeEndX = phoneLeft + phoneWidth * 0.2;
+const xIconX = phoneLeft + phoneWidth * 0.145;
+const xIconY = phoneTop + phoneHeight * 0.065;
+
+clickAt(homeX, homeY);
+wait(0.35);
+drag(rightSwipeStartX, swipeY, rightSwipeEndX, swipeY);
+wait(0.35);
+drag(leftSwipeStartX, swipeY, leftSwipeEndX, swipeY);
+wait(0.45);
+clickAt(xIconX, xIconY);
+
+"X opener macro completed.";

@@ -58,6 +58,8 @@ const nodes = {
   dailyActive: $("#dailyActive"),
   dailyDone: $("#dailyDone"),
   dailyAttention: $("#dailyAttention"),
+  liveAgentSummary: $("#liveAgentSummary"),
+  liveAgentBoard: $("#liveAgentBoard"),
   profileBucketSummary: $("#profileBucketSummary"),
   profileBuckets: $("#profileBuckets"),
   reviewQueueSummary: $("#reviewQueueSummary"),
@@ -100,8 +102,14 @@ let multiloginProfilesState = {
   lastLoadedAt: null
 };
 const TERMINAL_TASK_STATUSES = new Set(["completed", "cancelled"]);
+const ACTIVE_PROFILE_STATUSES = new Set(["starting", "running", "stopping", "prepared"]);
 let queuePlanInFlight = false;
 let toastTimer = null;
+let liveStatusState = {
+  checking: false,
+  lastCheckedAt: null,
+  error: ""
+};
 const PROFILE_BUCKETS = [
   { id: "ready", label: "Ready" },
   { id: "active", label: "Active" },
@@ -255,7 +263,7 @@ function renderMetrics() {
 function renderMlxProfileCard(profile, compact = false) {
   const isMobile = profile.profileType === "mobile";
   const canStart = Boolean(profile.id && (isMobile || profile.folderId));
-  const startLabel = "Start 30m";
+  const startLabel = isMobile ? "Start + View" : "Start 30m";
   const record = profileRecord(profile.id);
   const status = effectiveProfileStatus(profile);
   const details = [
@@ -293,6 +301,7 @@ function renderMlxProfileCard(profile, compact = false) {
           <button
             class="secondary mlx-start-profile"
             data-profile-id="${escapeHtml(profile.id)}"
+            data-profile-name="${escapeHtml(profile.name || "")}"
             data-folder-id="${escapeHtml(profile.folderId)}"
             data-profile-type="${escapeHtml(profile.profileType || "browser")}"
             ${canStart ? "" : "disabled"}
@@ -302,6 +311,8 @@ function renderMlxProfileCard(profile, compact = false) {
               ? `<button
                   class="secondary mlx-open-viewer"
                   data-profile-id="${escapeHtml(profile.id)}"
+                  data-profile-name="${escapeHtml(profile.name || "")}"
+                  data-folder-id="${escapeHtml(profile.folderId)}"
                   data-profile-type="mobile"
                 >Viewer</button>`
               : ""
@@ -311,14 +322,17 @@ function renderMlxProfileCard(profile, compact = false) {
               ? `<button
                   class="secondary mlx-open-x"
                   data-profile-id="${escapeHtml(profile.id)}"
+                  data-profile-name="${escapeHtml(profile.name || "")}"
                   data-folder-id="${escapeHtml(profile.folderId)}"
                   data-profile-type="mobile"
-                >Open X</button>`
+                >Open Phone</button>`
               : ""
           }
           <button
             class="secondary mlx-stop-profile"
             data-profile-id="${escapeHtml(profile.id)}"
+            data-profile-name="${escapeHtml(profile.name || "")}"
+            data-folder-id="${escapeHtml(profile.folderId)}"
             data-profile-type="${escapeHtml(profile.profileType || "browser")}"
           >Stop</button>
           <button class="secondary queue-profile-review" data-profile-id="${escapeHtml(profile.id)}">Review</button>
@@ -639,6 +653,22 @@ function operatorAgentById(agentId) {
 
 function multiloginProfileById(profileId) {
   return multiloginProfilesState.profiles.find((profile) => profile.id === profileId);
+}
+
+function profileFromButton(button) {
+  const profileId = button?.dataset.profileId || "";
+  const knownProfile = multiloginProfileById(profileId);
+  if (knownProfile) return knownProfile;
+  if (!profileId) {
+    throw new Error("This button has no Multilogin profile id. Sync profiles and refresh the page.");
+  }
+  return {
+    id: profileId,
+    name: button.dataset.profileName || profileId,
+    profileType: button.dataset.profileType || "mobile",
+    folderId: button.dataset.folderId || "",
+    status: button.dataset.profileStatus || "ready"
+  };
 }
 
 function profileRecord(profileId) {
@@ -981,11 +1011,98 @@ function renderPriorityBoard() {
           </div>
           <footer>
             <button class="secondary priority-select-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Select</button>
-            <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Start 30m</button>
-            ${isMobile ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}">Open X</button>` : ""}
-            ${isMobile ? `<button class="secondary priority-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}">Viewer</button>` : ""}
+            <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Start + View</button>
+            ${
+              isMobile
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open Phone</button>`
+                : ""
+            }
+            ${
+              isMobile
+                ? `<button class="secondary priority-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Viewer</button>`
+                : ""
+            }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
-            <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Stop</button>
+            <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Stop</button>
+          </footer>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function latestProfileReport(profileId) {
+  const record = profileRecord(profileId);
+  const session = activeSessionForProfile(profileId);
+  const latestSession = (operatorState?.sessions || []).find((item) => item.profileId === profileId);
+  const event = latestSession?.events?.[latestSession.events.length - 1] || null;
+  if (event) return `${event.label || "Prompt"}: ${event.outcome || "recorded"} ${formatRelative(event.createdAt)}`;
+  if (record?.issue) return record.issue;
+  if (record?.lastOpenedAt) return `Viewer opened ${formatRelative(record.lastOpenedAt)}`;
+  if (record?.lastStartedAt) return `Started ${formatRelative(record.lastStartedAt)}`;
+  if (session?.currentPrompt?.label) return `Current prompt: ${session.currentPrompt.label}`;
+  return "No report yet.";
+}
+
+function renderLiveAgentBoard() {
+  if (!operatorState || !nodes.liveAgentBoard) return;
+  const rows = priorityProfiles();
+  const liveRows = rows.filter((row) => ACTIVE_PROFILE_STATUSES.has(row.status) || row.record?.issue).slice(0, 8);
+  const checked = liveStatusState.lastCheckedAt ? `Checked ${formatRelative(liveStatusState.lastCheckedAt)}` : "Waiting for first check";
+  const activeCount = rows.filter((row) => ACTIVE_PROFILE_STATUSES.has(row.status)).length;
+  const attentionCount = rows.filter((row) => row.record?.issue).length;
+  nodes.liveAgentSummary.textContent = liveStatusState.error
+    ? `Checker error: ${liveStatusState.error}`
+    : `${activeCount} active, ${attentionCount} issue${attentionCount === 1 ? "" : "s"} | ${checked}`;
+
+  if (!liveRows.length) {
+    nodes.liveAgentBoard.innerHTML = `
+      <div class="live-empty">
+        <strong>No active profile visible yet.</strong>
+        <span>Click Start + View on a profile. This panel will show Multilogin status, auto-stop, and the last report.</span>
+      </div>
+    `;
+    return;
+  }
+
+  nodes.liveAgentBoard.innerHTML = liveRows
+    .map(({ profile, record, session, status }) => {
+      const isMobile = profile.profileType === "mobile";
+      const facts = [
+        profile.status ? `Multilogin: ${profile.status}` : "",
+        record?.lastSeenAt ? `Checked ${formatRelative(record.lastSeenAt)}` : "",
+        record?.autoStopAt && ACTIVE_PROFILE_STATUSES.has(status) ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
+        session?.status ? `Session: ${session.status}` : "",
+        record?.completedPrompts ? `${record.completedPrompts} done` : "",
+        record?.skippedPrompts ? `${record.skippedPrompts} skipped` : "",
+        record?.attentionCount ? `${record.attentionCount} attention` : ""
+      ].filter(Boolean);
+
+      return `
+        <article class="live-agent-card ${escapeHtml(status)}">
+          <header>
+            <div>
+              <strong>${escapeHtml(profile.name || profile.id)}</strong>
+              <p>${escapeHtml(isMobile ? `Mobile | Serial ${profile.serialNumber || "unknown"}` : profile.folderName || "Browser profile")}</p>
+            </div>
+            <span class="tag ${escapeHtml(status)}">${escapeHtml(status.replaceAll("_", " "))}</span>
+          </header>
+          <div class="live-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join("")}</div>
+          <div class="live-report">${escapeHtml(latestProfileReport(profile.id))}</div>
+          <footer>
+            ${
+              isMobile
+                ? `<button class="secondary priority-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Viewer</button>`
+                : ""
+            }
+            ${
+              isMobile
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open Phone</button>`
+                : ""
+            }
+            <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
+            <button class="secondary live-mark-attention" type="button" data-profile-id="${escapeHtml(profile.id)}">Needs attention</button>
+            <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Stop</button>
           </footer>
         </article>
       `;
@@ -1133,13 +1250,15 @@ function renderMultilogin() {
   const status = multiloginState.config.enabled
     ? multiloginState.config.hasToken
       ? "Enabled"
-      : "Enabled, no token"
+      : multiloginState.config.hasXcli
+        ? "Enabled, xcli"
+        : "Enabled, no token"
     : "Disabled";
 
   nodes.multiloginStatus.textContent = status;
   nodes.multiloginStatus.classList.toggle("online", multiloginState.config.enabled);
   nodes.multiloginRunButton.disabled = !multiloginState.config.enabled;
-  nodes.multiloginProfilesButton.disabled = !multiloginState.config.enabled || !multiloginState.config.hasToken;
+  nodes.multiloginProfilesButton.disabled = !multiloginState.config.enabled || (!multiloginState.config.hasToken && !multiloginState.config.hasXcli);
   nodes.multiloginDocsLink.href = multiloginState.source.url;
 
   fillSelect(
@@ -1169,6 +1288,7 @@ function render() {
   renderAgents();
   renderAccountsTable();
   renderOtpQueue();
+  renderLiveAgentBoard();
   renderPriorityBoard();
   renderSessionConsole();
   renderOperator();
@@ -1195,12 +1315,12 @@ async function loadState({ quiet = false } = {}) {
 }
 
 async function loadMultiloginProfiles({ quiet = false } = {}) {
-  if (!multiloginState?.config.enabled || !multiloginState?.config.hasToken) {
+  if (!multiloginState?.config.enabled || (!multiloginState?.config.hasToken && !multiloginState?.config.hasXcli)) {
     multiloginProfilesState = {
       profiles: [],
       total: 0,
       loading: false,
-      error: "Enable Multilogin with a token before syncing profiles.",
+      error: "Enable Multilogin with a token or local xcli before syncing profiles.",
       lastLoadedAt: null
     };
     render();
@@ -1230,6 +1350,7 @@ async function loadMultiloginProfiles({ quiet = false } = {}) {
     };
     render();
     if (!quiet) showToast(`Synced ${result.profiles.length} Multilogin profile(s).`);
+    await refreshLiveStatuses({ quiet: true });
   } catch (error) {
     multiloginProfilesState = {
       profiles: [],
@@ -1239,6 +1360,51 @@ async function loadMultiloginProfiles({ quiet = false } = {}) {
       lastLoadedAt: null
     };
     render();
+    if (!quiet) showToast(error.message);
+  }
+}
+
+async function refreshLiveStatuses({ quiet = true } = {}) {
+  const ids = multiloginProfilesState.profiles.filter((profile) => profile.profileType === "mobile").map((profile) => profile.id);
+  if (!ids.length || liveStatusState.checking) return;
+
+  liveStatusState = {
+    ...liveStatusState,
+    checking: true,
+    error: ""
+  };
+  renderLiveAgentBoard();
+
+  try {
+    const result = await api(`/api/multilogin/mobile-statuses?ids=${encodeURIComponent(ids.join(","))}`);
+    const statuses = result.statuses || {};
+    multiloginProfilesState = {
+      ...multiloginProfilesState,
+      profiles: multiloginProfilesState.profiles.map((profile) => {
+        const status = statuses[profile.id];
+        return status
+          ? {
+              ...profile,
+              status: status.status || profile.status,
+              rawStatus: status.rawStatus || profile.rawStatus
+            }
+          : profile;
+      })
+    };
+    if (result.snapshot) operatorState = result.snapshot;
+    liveStatusState = {
+      checking: false,
+      lastCheckedAt: result.requestedAt || new Date().toISOString(),
+      error: ""
+    };
+    render();
+  } catch (error) {
+    liveStatusState = {
+      checking: false,
+      lastCheckedAt: liveStatusState.lastCheckedAt,
+      error: error.message
+    };
+    renderLiveAgentBoard();
     if (!quiet) showToast(error.message);
   }
 }
@@ -1285,7 +1451,7 @@ function sessionPayload(profile) {
     targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
     notes: nodes.sessionNotes.value,
     openX: profile.profileType === "mobile",
-    runUiMacro: true
+    runUiMacro: false
   };
 }
 
@@ -1318,6 +1484,7 @@ async function startWorkForProfile(profile, { message = "Work session started." 
 
 async function startProfileControl(profile, { message = "Started. Auto-stop in 30m." } = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
+  const successMessage = profile.profileType === "mobile" ? "Opened visible phone. Auto-stop in 30m." : message;
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/start`, {
     method: "POST",
     body: JSON.stringify({
@@ -1328,14 +1495,49 @@ async function startProfileControl(profile, { message = "Started. Auto-stop in 3
   });
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
-  const warning = result.response?.payload?.startWarning || result.response?.payload?.viewerWarning;
+  const warning = result.response?.payload?.startWarning || result.response?.payload?.viewerWarning || result.response?.payload?.launchWarning;
   showToast(
     result.uncertain
-      ? "Start requested; Multilogin confirmation was unclear. Check Priority Board."
+      ? "Start requested; Multilogin confirmation was unclear. Check Live Agent."
       : warning
-        ? message.replace("Started.", "Started with warning.")
-        : message
+        ? successMessage.replace("Opened visible phone.", "Phone opened with warning.").replace("Started.", "Started with warning.")
+        : successMessage
   );
+  return result;
+}
+
+async function openViewerControl(profile, { message = "Opened Multilogin viewer." } = {}) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
+    method: "POST",
+    body: JSON.stringify({
+      profileName: profile.name || "",
+      profileType: profile.profileType || "mobile",
+      folderId: profile.folderId || ""
+    })
+  });
+  if (result.snapshot) operatorState = result.snapshot;
+  await loadMultiloginProfiles({ quiet: true });
+  const warning = result.response?.payload?.launchWarning;
+  showToast(warning ? "Viewer requested; Multilogin confirmation was unclear. Check Live Agent." : message);
+  return result;
+}
+
+async function openXControl(profile, { message = "Opened phone. Tap X manually." } = {}) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
+    method: "POST",
+    body: JSON.stringify({
+      profileName: profile.name || "",
+      profileType: profile.profileType || "mobile",
+      folderId: profile.folderId || "",
+      runUiMacro: false
+    })
+  });
+  if (result.snapshot) operatorState = result.snapshot;
+  await loadMultiloginProfiles({ quiet: true });
+  const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+  showToast(warning ? "Phone opened with Multilogin warning. Check Live Agent." : message);
   return result;
 }
 
@@ -1608,18 +1810,7 @@ nodes.openSessionViewerButton.addEventListener("click", async () => {
   if (!profile) return;
 
   try {
-    const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
-      method: "POST",
-      body: JSON.stringify({
-        profileName: profile.name,
-        profileType: profile.profileType,
-        folderId: profile.folderId
-      })
-    });
-    if (result.snapshot) operatorState = result.snapshot;
-    await loadMultiloginProfiles({ quiet: true });
-    const warning = result.response?.payload?.launchWarning;
-    showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
+    await openViewerControl(profile);
   } catch (error) {
     showToast(error.message);
   }
@@ -1630,19 +1821,7 @@ nodes.openSessionXButton.addEventListener("click", async () => {
   if (!profile) return;
 
   try {
-    const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
-      method: "POST",
-      body: JSON.stringify({
-        profileName: profile.name,
-        profileType: profile.profileType,
-        folderId: profile.folderId,
-        runUiMacro: true
-      })
-    });
-    if (result.snapshot) operatorState = result.snapshot;
-    await loadMultiloginProfiles({ quiet: true });
-    const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-    showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
+    await openXControl(profile);
   } catch (error) {
     showToast(error.message);
   }
@@ -1823,6 +2002,7 @@ document.addEventListener("click", async (event) => {
   const priorityViewerButton = event.target.closest(".priority-viewer");
   const priorityQueueButton = event.target.closest(".priority-queue-review");
   const priorityStopButton = event.target.closest(".priority-stop-profile");
+  const liveAttentionButton = event.target.closest(".live-mark-attention");
   const operatorRunButton = event.target.closest(".operator-run-task");
   const operatorStatusButton = event.target.closest(".operator-task-status");
 
@@ -1896,59 +2076,32 @@ document.addEventListener("click", async (event) => {
   }
 
   if (mlxStartButton) {
-    const profile = multiloginProfileById(mlxStartButton.dataset.profileId);
     try {
-      await startProfileControl(profile);
+      await startProfileControl(profileFromButton(mlxStartButton));
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (mlxOpenViewerButton) {
-    const profile = multiloginProfileById(mlxOpenViewerButton.dataset.profileId);
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenViewerButton.dataset.profileId)}/viewer`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile?.name || "",
-          profileType: mlxOpenViewerButton.dataset.profileType,
-          folderId: profile?.folderId || ""
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      const warning = result.response?.payload?.launchWarning;
-      showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
+      await openViewerControl(profileFromButton(mlxOpenViewerButton));
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (mlxOpenXButton) {
-    const profile = multiloginProfileById(mlxOpenXButton.dataset.profileId);
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxOpenXButton.dataset.profileId)}/open-x`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile?.name || "",
-          profileType: mlxOpenXButton.dataset.profileType,
-          folderId: mlxOpenXButton.dataset.folderId,
-          runUiMacro: true
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-      showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
+      await openXControl(profileFromButton(mlxOpenXButton));
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (mlxStopButton) {
-    const profile = multiloginProfileById(mlxStopButton.dataset.profileId);
     try {
-      await stopProfileControl(profile);
+      await stopProfileControl(profileFromButton(mlxStopButton));
     } catch (error) {
       showToast(error.message);
     }
@@ -2060,50 +2213,23 @@ document.addEventListener("click", async (event) => {
 
   if (priorityStartButton) {
     try {
-      await startProfileControl(multiloginProfileById(priorityStartButton.dataset.profileId));
+      await startProfileControl(profileFromButton(priorityStartButton));
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (priorityOpenXButton) {
-    const profile = multiloginProfileById(priorityOpenXButton.dataset.profileId);
-    if (!profile) return;
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile.name || "",
-          profileType: profile.profileType,
-          folderId: profile.folderId,
-          runUiMacro: true
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-      showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
+      await openXControl(profileFromButton(priorityOpenXButton));
     } catch (error) {
       showToast(error.message);
     }
   }
 
   if (priorityViewerButton) {
-    const profile = multiloginProfileById(priorityViewerButton.dataset.profileId);
-    if (!profile) return;
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile.name || "",
-          profileType: profile.profileType,
-          folderId: profile.folderId
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      const warning = result.response?.payload?.launchWarning;
-      showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
+      await openViewerControl(profileFromButton(priorityViewerButton));
     } catch (error) {
       showToast(error.message);
     }
@@ -2124,7 +2250,28 @@ document.addEventListener("click", async (event) => {
 
   if (priorityStopButton) {
     try {
-      await stopProfileControl(multiloginProfileById(priorityStopButton.dataset.profileId));
+      await stopProfileControl(profileFromButton(priorityStopButton));
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (liveAttentionButton) {
+    try {
+      const profile = profileFromButton(liveAttentionButton);
+      const result = await api(`/api/operator/profiles/${encodeURIComponent(profile.id)}/state`, {
+        method: "POST",
+        body: JSON.stringify({
+          profileName: profile.name || "",
+          profileType: profile.profileType || "mobile",
+          folderId: profile.folderId || "",
+          status: "needs_attention",
+          issue: "Marked from Live Agent."
+        })
+      });
+      operatorState = result.snapshot;
+      render();
+      showToast("Marked for attention.");
     } catch (error) {
       showToast(error.message);
     }
@@ -2177,7 +2324,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 loadState().then(() => {
-  if (multiloginState?.config.enabled && multiloginState?.config.hasToken) {
+  if (multiloginState?.config.enabled && (multiloginState?.config.hasToken || multiloginState?.config.hasXcli)) {
     loadMultiloginProfiles({ quiet: true });
   }
 });
@@ -2190,3 +2337,6 @@ setInterval(() => {
     loadMultiloginProfiles({ quiet: true });
   }
 }, 15000);
+setInterval(() => {
+  refreshLiveStatuses({ quiet: true });
+}, 5000);

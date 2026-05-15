@@ -11,7 +11,8 @@ const DEFAULT_CLOUD_BASE_URL = "https://api.multilogin.com";
 const DEFAULT_LAUNCHER_BASE_URL = "https://launcher.mlx.yt:45001";
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MOBILE_X_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
+const MOBILE_X_JXA_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.jxa");
+const MOBILE_X_SWIFT_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
 const DEFAULT_X_APP_ID = "1556606452280463360";
 let localEnvLoaded = false;
 
@@ -415,7 +416,9 @@ async function runXcli(args, env = process.env) {
 }
 
 function isSoftMobileCliError(error) {
-  return /unexpected response|failed to get profiles starting urls|starting urls/i.test(String(error?.message || error || ""));
+  return /unexpected response|failed to get profiles starting urls|starting urls|failed to start mobile profiles|internal server error/i.test(
+    String(error?.message || error || "")
+  );
 }
 
 function parseXcliBlocks(stdout) {
@@ -671,16 +674,17 @@ export async function startMultiloginMobileProfile({ profileId } = {}, env = pro
   }
 
   let stdout = "";
+  let startWarning = null;
   try {
     stdout = await runXcli(["mobile-profiles-phone-start", "--ids", String(profileId)], env);
   } catch (error) {
-    throw new Error(
-      `${error.message}. Background start is Multilogin's mobile proxy-start path; if it fails, use Viewer to launch the cloud phone.`
-    );
+    if (!isSoftMobileCliError(error)) throw error;
+    startWarning = error.message;
   }
 
   return {
     requestedAt: new Date().toISOString(),
+    uncertain: Boolean(startWarning),
     request: {
       label: "Start mobile profile in background",
       method: "xcli",
@@ -688,10 +692,15 @@ export async function startMultiloginMobileProfile({ profileId } = {}, env = pro
       path: "mobile-profiles-phone-start"
     },
     response: {
-      ok: true,
-      httpStatus: 200,
-      statusText: "OK",
-      payload: { message: "Mobile profile background start requested." }
+      ok: !startWarning,
+      httpStatus: startWarning ? 202 : 200,
+      statusText: startWarning ? "Unconfirmed" : "OK",
+      payload: {
+        message: startWarning
+          ? "Background start was requested, but Multilogin returned an unclear result."
+          : "Mobile profile background start requested.",
+        startWarning
+      }
     },
     output: stdout ? "ok" : "ok"
   };
@@ -773,12 +782,31 @@ async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
   if (process.platform !== "darwin") {
     throw new Error("The mobile X opener macro is only available on macOS.");
   }
-  if (!existsSync(MOBILE_X_MACRO_PATH)) {
-    throw new Error(`Mobile X opener macro was not found at ${MOBILE_X_MACRO_PATH}.`);
+
+  const timeout = Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000);
+  const macro =
+    existsSync(MOBILE_X_JXA_MACRO_PATH)
+      ? {
+          command: "/usr/bin/osascript",
+          args: ["-l", "JavaScript", MOBILE_X_JXA_MACRO_PATH, String(profileId || "")],
+          method: "osascript",
+          path: "scripts/open-mobile-x.jxa"
+        }
+      : existsSync(MOBILE_X_SWIFT_MACRO_PATH)
+        ? {
+            command: "/usr/bin/swift",
+            args: [MOBILE_X_SWIFT_MACRO_PATH, String(profileId || "")],
+            method: "swift",
+            path: "scripts/open-mobile-x.swift"
+          }
+        : null;
+
+  if (!macro) {
+    throw new Error(`Mobile X opener macro was not found at ${MOBILE_X_JXA_MACRO_PATH}.`);
   }
 
-  const { stdout } = await execFileAsync("/usr/bin/swift", [MOBILE_X_MACRO_PATH, String(profileId || "")], {
-    timeout: Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000),
+  const { stdout } = await execFileAsync(macro.command, macro.args, {
+    timeout,
     maxBuffer: 256 * 1024
   });
 
@@ -786,9 +814,9 @@ async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
     requestedAt: new Date().toISOString(),
     request: {
       label: "Open X with local macOS UI macro",
-      method: "swift",
+      method: macro.method,
       base: "local",
-      path: "scripts/open-mobile-x.swift"
+      path: macro.path
     },
     response: {
       ok: true,
@@ -800,7 +828,15 @@ async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
   };
 }
 
-export async function openMultiloginMobileX({ profileId, groupId, ensureInstalled = false, runUiMacro = true } = {}, env = process.env) {
+function friendlyMacroError(error) {
+  const message = String(error?.message || error || "Mobile X opener macro failed.");
+  if (/Accessibility permission is required/i.test(message)) {
+    return "Open X needs macOS Accessibility permission for osascript or your terminal.";
+  }
+  return message.split("\n").find((line) => line.trim()) || "Mobile X opener macro failed.";
+}
+
+export async function openMultiloginMobileX({ profileId, groupId, ensureInstalled = false, runUiMacro = false } = {}, env = process.env) {
   if (!profileId) {
     throw new Error("Opening X on a Multilogin mobile profile requires profileId.");
   }
@@ -825,7 +861,7 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
     try {
       macroResult = await runMobileXUiMacro({ profileId }, env);
     } catch (error) {
-      macroWarning = error.message;
+      macroWarning = friendlyMacroError(error);
     }
   }
 
@@ -833,9 +869,9 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
     requestedAt: new Date().toISOString(),
     request: {
       label: "Open mobile profile to X",
-      method: "xcli+macro",
+      method: runUiMacro ? "xcli+macro" : "xcli",
       base: "local",
-      path: "mobile-phone-launch + scripts/open-mobile-x.swift"
+      path: runUiMacro ? "mobile-phone-launch + scripts/open-mobile-x.jxa" : "mobile-phone-launch"
     },
     response: {
       ok: !macroWarning && !viewerWarning,
@@ -844,10 +880,13 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
       payload: {
         message: macroWarning || viewerWarning
           ? "Viewer/Open X was requested, but Multilogin did not return a clean confirmation."
-          : "Viewer opened and X opener macro completed.",
+          : runUiMacro
+            ? "Viewer opened and X opener macro completed."
+            : "Viewer opened. Tap X manually inside the phone.",
         viewerWarning,
         installWarning,
-        macroWarning
+        macroWarning,
+        manualActionRequired: !runUiMacro
       }
     },
     viewerResult,
