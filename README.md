@@ -25,6 +25,10 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
+- **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
+- Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
+- Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
+- Local Review Queue and Comment Drafts panels for manual follow-up work
 - Daily overview for profiles used today, active sessions, completed prompts, and attention items
 - Operator Queue with operators, queued tasks, and task status tracking
 - Server-side random prompt planning: one reusable start task, then random local prompts
@@ -48,10 +52,13 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 3. Use **Sync Profiles** in the Multilogin panel.
 4. In **Profile Console**, select a profile and preset.
 5. Click **Start Work** to prepare the profile, run the start task, and begin the session runner.
-6. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
-7. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-8. Use **Viewer** for mobile profiles when you want to watch the phone.
-9. Use terminal commands if you prefer CLI control.
+6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile and open X.
+7. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
+8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
+9. Add review URLs and reusable comment drafts locally so you can revisit them later.
+10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
+11. Use **Viewer** for mobile profiles when you want to watch the phone.
+12. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
 

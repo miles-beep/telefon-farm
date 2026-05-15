@@ -35,7 +35,9 @@ import {
 } from "./multiloginClient.mjs";
 import {
   completeOperatorTask,
+  createCommentDraft,
   createOperatorPlan,
+  createReviewItem,
   getActiveOperatorSessionForProfile,
   prepareOperatorSession,
   createOperatorTask,
@@ -46,7 +48,10 @@ import {
   recordOperatorPromptOutcome,
   startOperatorSession,
   stopOperatorSession,
-  updateOperatorTask
+  updateCommentDraft,
+  updateOperatorProfileRecord,
+  updateOperatorTask,
+  updateReviewItem
 } from "./operatorState.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -163,6 +168,74 @@ async function handleApi(request, response, url) {
 
   if (method === "GET" && url.pathname === "/api/operator") {
     sendJson(response, 200, getOperatorSnapshot());
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "profiles" &&
+    segments[4] === "state"
+  ) {
+    const body = await readJsonBody(request);
+    const record = updateOperatorProfileRecord(segments[3], body);
+    sendJson(response, 200, {
+      record,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/operator/review-items") {
+    const body = await readJsonBody(request);
+    const item = createReviewItem(body);
+    sendJson(response, 201, {
+      item,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "review-items" &&
+    segments[3]
+  ) {
+    const body = await readJsonBody(request);
+    const item = updateReviewItem(segments[3], body);
+    sendJson(response, 200, {
+      item,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/operator/comment-drafts") {
+    const body = await readJsonBody(request);
+    const draft = createCommentDraft(body);
+    sendJson(response, 201, {
+      draft,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "comment-drafts" &&
+    segments[3]
+  ) {
+    const body = await readJsonBody(request);
+    const draft = updateCommentDraft(segments[3], body);
+    sendJson(response, 200, {
+      draft,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 

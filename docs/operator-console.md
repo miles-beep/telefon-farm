@@ -7,10 +7,13 @@ The Profile Console is the main work surface for local Multilogin sessions. It p
 - Syncs real Multilogin browser profiles and mobile cloud-phone profiles.
 - Creates one persistent session per profile.
 - Starts the main local workflow with one **Start Work** button.
+- Opens the next ready profile with one **Open Next Ready Profile** button.
 - Queues one reusable `Start profile` task when a session is prepared.
 - Runs allowed Multilogin lifecycle controls: start and stop.
 - Generates local prompts at randomized intervals from a selected preset.
 - Records prompt outcomes with `Done`, `Skip`, and `Needs attention`.
+- Tracks per-profile Ready, Active, Cooldown, Setup, and Attention states.
+- Stores local review items and reusable manual comment drafts.
 - Keeps a per-session log and a daily overview.
 - Keeps completed and cancelled tasks out of the active task list.
 
@@ -34,6 +37,20 @@ Preset prompts are local instructions. They do not click, scroll, like, repost, 
 Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each stage.
 
 After `Done` or `Skip`, the server schedules the next prompt with a random delay from the selected preset. `Needs attention` pauses the session until you start it again.
+
+## Workbench Controls
+
+- **Open Next Ready Profile** selects the next profile in the Ready bucket, starts the local work session, and opens X for mobile profiles.
+- **Cooldown 1h** marks the selected profile as resting locally so it is skipped by the next-ready picker.
+- **Clear Issue** returns the selected profile to Ready.
+- Recovery buttons mark the selected profile with a local setup or attention state: login needed, X missing, stuck store, wrong screen, or frozen phone.
+- Profile buckets make it clear which profiles are ready, active, resting, waiting for setup, or blocked by an issue.
+
+## Review Queue And Drafts
+
+- Review Queue stores local links and notes for later manual review.
+- Opening a review item selects its profile, sets the target URL, and starts the normal local work flow.
+- Comment Drafts stores reusable text snippets and copies them to the clipboard. The app does not paste or submit comments for you.
 
 ## Queue Task Behavior
 

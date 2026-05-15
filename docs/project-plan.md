@@ -24,6 +24,9 @@ Build an easy local dashboard for monitoring Multilogin profiles. The dashboard 
    - Persistent profile sessions
    - Presets for Review mode, Light warmup, Comment drafting, and No engagement
    - Start Work one-click flow for prepare/start/session-run
+   - Open Next Ready Profile flow for picking the next ready profile and opening mobile X
+   - Cooldown and recovery controls for common setup issues
+   - Profile buckets for Ready, Active, Cooldown, Setup, and Attention
    - Daily overview for active sessions, completed prompts, and attention items
    - Safety notes before starting a session
    - Done/skip/needs-attention controls for the current prompt
@@ -37,19 +40,24 @@ Build an easy local dashboard for monitoring Multilogin profiles. The dashboard 
    - Server-side random plan generation after `Start profile`: one reusable start task, then random local prompts
    - Done/cancel removes tasks from the active operator list
 
-4. **Post Queue**
+4. **Review Queue And Drafts**
+   - Local review URLs and notes for manual follow-up
+   - Reusable comment draft library with clipboard copy
+   - No automatic paste, submit, like, repost, save, or follow behavior
+
+5. **Post Queue**
    - Empty by default
    - Local-only records if demo mode is explicitly enabled
 
-5. **Saved And Comments**
+6. **Saved And Comments**
    - Local-only saved posts, comments, and repost notes
    - No write-through to third-party platforms
 
-6. **Review Task**
+7. **Review Task**
    - Local sandbox task records only
    - Disabled by default through empty local state
 
-7. **Detection And Health**
+8. **Detection And Health**
    - Local scoring panels remain available for demo mode
    - Real Multilogin profile state is shown separately
 

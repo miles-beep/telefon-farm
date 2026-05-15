@@ -172,10 +172,50 @@ const STATIC_PRESETS = [
 
 const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const ACTIVE_SESSION_STATUSES = new Set(["prepared", "running", "needs_attention"]);
+const PROFILE_STATUSES = new Set([
+  "ready",
+  "prepared",
+  "running",
+  "cooldown",
+  "needs_attention",
+  "needs_login",
+  "x_missing",
+  "wrong_screen",
+  "stuck_play_store",
+  "phone_frozen",
+  "problem"
+]);
+
+const DEFAULT_COMMENT_DRAFTS = [
+  {
+    id: "draft_save_later",
+    label: "Save for later",
+    text: "Saving this for later review.",
+    status: "active",
+    system: true
+  },
+  {
+    id: "draft_read_more",
+    label: "Read more",
+    text: "Useful point. I want to read more before I reply properly.",
+    status: "active",
+    system: true
+  },
+  {
+    id: "draft_question",
+    label: "Question",
+    text: "Interesting. What is the source for this?",
+    status: "active",
+    system: true
+  }
+];
 
 const operatorState = {
   tasks: [],
-  sessions: []
+  sessions: [],
+  profileRecords: {},
+  reviewItems: [],
+  commentDrafts: []
 };
 
 function iso() {
@@ -219,6 +259,14 @@ function loadPersistedState() {
     const persisted = JSON.parse(readFileSync(statePath, "utf8"));
     operatorState.tasks = Array.isArray(persisted.tasks) ? persisted.tasks.slice(0, 250) : [];
     operatorState.sessions = Array.isArray(persisted.sessions) ? persisted.sessions.slice(0, 120) : [];
+    operatorState.profileRecords =
+      persisted.profileRecords && typeof persisted.profileRecords === "object" && !Array.isArray(persisted.profileRecords)
+        ? persisted.profileRecords
+        : {};
+    operatorState.reviewItems = Array.isArray(persisted.reviewItems) ? persisted.reviewItems.slice(0, 250) : [];
+    operatorState.commentDrafts = Array.isArray(persisted.commentDrafts)
+      ? persisted.commentDrafts.slice(0, 120)
+      : [];
   } catch (error) {
     console.warn(`Could not load operator state: ${error.message}`);
   }
@@ -234,7 +282,10 @@ function savePersistedState() {
           version: 1,
           savedAt: iso(),
           tasks: operatorState.tasks,
-          sessions: operatorState.sessions
+          sessions: operatorState.sessions,
+          profileRecords: operatorState.profileRecords,
+          reviewItems: operatorState.reviewItems,
+          commentDrafts: operatorState.commentDrafts
         },
         null,
         2
@@ -246,6 +297,113 @@ function savePersistedState() {
 }
 
 loadPersistedState();
+if (!operatorState.commentDrafts.length) {
+  const now = iso();
+  operatorState.commentDrafts = DEFAULT_COMMENT_DRAFTS.map((draft) => ({
+    ...draft,
+    createdAt: now,
+    updatedAt: now
+  }));
+}
+
+function defaultProfileRecord(profileId) {
+  return {
+    profileId,
+    profileName: "",
+    profileType: "",
+    folderId: "",
+    status: "ready",
+    issue: "",
+    activeSessionId: "",
+    cooldownUntil: null,
+    lastPreparedAt: null,
+    lastStartedAt: null,
+    lastOpenedAt: null,
+    lastStoppedAt: null,
+    lastPromptAt: null,
+    completedPrompts: 0,
+    skippedPrompts: 0,
+    attentionCount: 0,
+    notes: "",
+    updatedAt: null
+  };
+}
+
+function normalizeProfileStatus(record) {
+  if (
+    record.status === "cooldown" &&
+    record.cooldownUntil &&
+    new Date(record.cooldownUntil).getTime() <= Date.now()
+  ) {
+    return {
+      ...record,
+      status: "ready",
+      cooldownUntil: null
+    };
+  }
+  return record;
+}
+
+function ensureProfileRecord(profileId, seed = {}) {
+  const normalizedProfileId = trim(profileId);
+  if (!normalizedProfileId) throw new Error("Profile id is required.");
+
+  const existing = operatorState.profileRecords[normalizedProfileId] || {};
+  const record = {
+    ...defaultProfileRecord(normalizedProfileId),
+    ...existing,
+    profileId: normalizedProfileId
+  };
+
+  if (Object.hasOwn(seed, "profileName")) record.profileName = trim(seed.profileName, record.profileName);
+  if (Object.hasOwn(seed, "profileType")) record.profileType = trim(seed.profileType, record.profileType);
+  if (Object.hasOwn(seed, "folderId")) record.folderId = trim(seed.folderId, record.folderId);
+
+  operatorState.profileRecords[normalizedProfileId] = record;
+  return record;
+}
+
+function patchProfileRecord(profileId, patch = {}, { save = true } = {}) {
+  const record = ensureProfileRecord(profileId, patch);
+  const now = iso();
+
+  if (Object.hasOwn(patch, "status")) {
+    const status = trim(patch.status, "ready");
+    if (!PROFILE_STATUSES.has(status)) throw new Error("Invalid profile status.");
+    record.status = status;
+  }
+
+  if (Object.hasOwn(patch, "issue")) record.issue = trim(patch.issue);
+  if (Object.hasOwn(patch, "activeSessionId")) record.activeSessionId = trim(patch.activeSessionId);
+  if (Object.hasOwn(patch, "notes")) record.notes = trim(patch.notes);
+  if (Object.hasOwn(patch, "lastPreparedAt")) record.lastPreparedAt = patch.lastPreparedAt || null;
+  if (Object.hasOwn(patch, "lastStartedAt")) record.lastStartedAt = patch.lastStartedAt || null;
+  if (Object.hasOwn(patch, "lastOpenedAt")) record.lastOpenedAt = patch.lastOpenedAt || null;
+  if (Object.hasOwn(patch, "lastStoppedAt")) record.lastStoppedAt = patch.lastStoppedAt || null;
+  if (Object.hasOwn(patch, "lastPromptAt")) record.lastPromptAt = patch.lastPromptAt || null;
+  if (Object.hasOwn(patch, "cooldownUntil")) record.cooldownUntil = patch.cooldownUntil || null;
+
+  if (Number.isFinite(Number(patch.cooldownMinutes))) {
+    const minutes = Math.max(0, Math.round(Number(patch.cooldownMinutes)));
+    record.cooldownUntil = minutes ? new Date(Date.now() + minutes * 60 * 1000).toISOString() : null;
+    record.status = minutes ? "cooldown" : "ready";
+  }
+
+  if (Number.isFinite(Number(patch.completedPromptsDelta))) {
+    record.completedPrompts = Math.max(0, Number(record.completedPrompts || 0) + Number(patch.completedPromptsDelta));
+  }
+  if (Number.isFinite(Number(patch.skippedPromptsDelta))) {
+    record.skippedPrompts = Math.max(0, Number(record.skippedPrompts || 0) + Number(patch.skippedPromptsDelta));
+  }
+  if (Number.isFinite(Number(patch.attentionCountDelta))) {
+    record.attentionCount = Math.max(0, Number(record.attentionCount || 0) + Number(patch.attentionCountDelta));
+  }
+
+  record.updatedAt = now;
+  operatorState.profileRecords[record.profileId] = record;
+  if (save) savePersistedState();
+  return record;
+}
 
 function getOperatorsWithStatus() {
   const runningTasks = operatorState.tasks.filter((task) => task.status === "running");
@@ -414,6 +572,7 @@ function getDailyOverview() {
     (session.events || []).filter((event) => dateKey(event.createdAt) === today).map((event) => ({ ...event, sessionId: event.sessionId || session.id }))
   );
   const todayTasks = operatorState.tasks.filter((task) => dateKey(task.updatedAt || task.createdAt) === today);
+  const openReviewItems = operatorState.reviewItems.filter((item) => item.status === "open");
   const attentionSessionIds = new Set([
     ...todayEvents.filter((event) => event.outcome === "attention").map((event) => event.sessionId),
     ...operatorState.sessions.filter((session) => session.status === "needs_attention").map((session) => session.id)
@@ -426,9 +585,32 @@ function getDailyOverview() {
     completedPrompts: todayEvents.filter((event) => event.outcome === "done").length,
     skippedPrompts: todayEvents.filter((event) => event.outcome === "skipped").length,
     attentionItems: attentionSessionIds.size,
+    openReviewItems: openReviewItems.length,
     queuedTasks: operatorState.tasks.filter((task) => task.status === "queued").length,
     runningTasks: operatorState.tasks.filter((task) => task.status === "running").length,
     failedTasks: todayTasks.filter((task) => task.status === "failed").length
+  };
+}
+
+function getProfileRecordsSnapshot() {
+  return Object.fromEntries(
+    Object.entries(operatorState.profileRecords).map(([profileId, record]) => [profileId, normalizeProfileStatus(record)])
+  );
+}
+
+function getDailyPlan(profileRecords) {
+  const records = Object.values(profileRecords);
+  return {
+    readyProfiles: records.filter((record) => record.status === "ready").length,
+    runningProfiles: records.filter((record) => record.status === "running").length,
+    cooldownProfiles: records.filter((record) => record.status === "cooldown").length,
+    needsLogin: records.filter((record) => record.status === "needs_login").length,
+    xMissing: records.filter((record) => record.status === "x_missing").length,
+    problemProfiles: records.filter((record) =>
+      ["needs_attention", "wrong_screen", "stuck_play_store", "phone_frozen", "problem"].includes(record.status)
+    ).length,
+    openReviewItems: operatorState.reviewItems.filter((item) => item.status === "open").length,
+    activeDrafts: operatorState.commentDrafts.filter((draft) => draft.status !== "archived").length
   };
 }
 
@@ -437,6 +619,7 @@ export function getOperatorSnapshot() {
   const queuedTasks = operatorState.tasks.filter((task) => task.status === "queued");
   const operators = getOperatorsWithStatus();
   const sessions = [...operatorState.sessions].sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+  const profileRecords = getProfileRecordsSnapshot();
 
   return {
     generatedAt: iso(),
@@ -446,8 +629,12 @@ export function getOperatorSnapshot() {
     presets: clone(STATIC_PRESETS),
     tasks: [...operatorState.tasks].sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt)),
     sessions,
+    profileRecords,
+    reviewItems: [...operatorState.reviewItems].sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt)),
+    commentDrafts: [...operatorState.commentDrafts].sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt)),
     activeSession: sessions.find((session) => ACTIVE_SESSION_STATUSES.has(session.status)) || null,
     dailyOverview: getDailyOverview(),
+    dailyPlan: getDailyPlan(profileRecords),
     persistence: {
       enabled: true,
       path: statePath
@@ -561,11 +748,133 @@ export function markOperatorTaskRunning(taskId) {
 }
 
 export function completeOperatorTask(taskId, result = null) {
-  return updateOperatorTask(taskId, { status: "completed", result, error: null });
+  const task = updateOperatorTask(taskId, { status: "completed", result, error: null });
+  if (task.functionId === "start_profile" && task.profileId) {
+    patchProfileRecord(task.profileId, {
+      profileName: task.profileName,
+      profileType: task.profileType,
+      folderId: task.folderId,
+      status: "prepared",
+      issue: "",
+      lastStartedAt: iso()
+    });
+  }
+  if (task.functionId === "stop_profile" && task.profileId) {
+    patchProfileRecord(task.profileId, {
+      profileName: task.profileName,
+      profileType: task.profileType,
+      folderId: task.folderId,
+      status: "cooldown",
+      activeSessionId: "",
+      cooldownMinutes: 60,
+      lastStoppedAt: iso()
+    });
+  }
+  return task;
 }
 
 export function failOperatorTask(taskId, error) {
-  return updateOperatorTask(taskId, { status: "failed", error: String(error || "Task failed.") });
+  const task = updateOperatorTask(taskId, { status: "failed", error: String(error || "Task failed.") });
+  if (task.profileId) {
+    patchProfileRecord(task.profileId, {
+      profileName: task.profileName,
+      profileType: task.profileType,
+      folderId: task.folderId,
+      status: "problem",
+      issue: String(error || "Task failed.")
+    });
+  }
+  return task;
+}
+
+export function updateOperatorProfileRecord(profileId, patch = {}) {
+  return patchProfileRecord(profileId, patch);
+}
+
+export function createReviewItem(payload = {}) {
+  const profile = taskPayloadForProfile(payload);
+  const note = trim(payload.note || payload.notes);
+  const url = trim(payload.url || payload.targetUrl, "https://x.com/home");
+  if (!profile.profileId) throw new Error("Select a profile for this review item.");
+  if (!note && !url) throw new Error("Add a review URL or note.");
+
+  const now = iso();
+  const item = {
+    id: id("review"),
+    profileId: profile.profileId,
+    profileName: profile.profileName,
+    profileType: profile.profileType,
+    folderId: profile.folderId,
+    url,
+    note,
+    status: "open",
+    source: trim(payload.source, "manual"),
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null
+  };
+
+  operatorState.reviewItems.unshift(item);
+  operatorState.reviewItems = operatorState.reviewItems.slice(0, 250);
+  patchProfileRecord(profile.profileId, { ...profile, lastOpenedAt: now }, { save: false });
+  savePersistedState();
+  return item;
+}
+
+export function updateReviewItem(itemId, patch = {}) {
+  const item = operatorState.reviewItems.find((entry) => entry.id === itemId);
+  if (!item) throw new Error("Review item not found.");
+
+  const allowedStatus = ["open", "done", "archived"];
+  if (Object.hasOwn(patch, "status")) {
+    const status = trim(patch.status, "open");
+    if (!allowedStatus.includes(status)) throw new Error("Invalid review item status.");
+    item.status = status;
+    item.completedAt = status === "done" ? iso() : item.completedAt;
+  }
+  if (Object.hasOwn(patch, "note")) item.note = trim(patch.note);
+  if (Object.hasOwn(patch, "url")) item.url = trim(patch.url, item.url);
+  item.updatedAt = iso();
+  savePersistedState();
+  return item;
+}
+
+export function createCommentDraft(payload = {}) {
+  const text = trim(payload.text);
+  if (!text) throw new Error("Draft text is required.");
+
+  const now = iso();
+  const draft = {
+    id: id("draft"),
+    label: trim(payload.label, "Draft"),
+    text,
+    status: "active",
+    system: false,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  operatorState.commentDrafts.unshift(draft);
+  operatorState.commentDrafts = operatorState.commentDrafts.slice(0, 120);
+  savePersistedState();
+  return draft;
+}
+
+export function updateCommentDraft(draftId, patch = {}) {
+  const draft = operatorState.commentDrafts.find((entry) => entry.id === draftId);
+  if (!draft) throw new Error("Comment draft not found.");
+
+  const allowedStatus = ["active", "archived"];
+  if (Object.hasOwn(patch, "status")) {
+    const status = trim(patch.status, "active");
+    if (!allowedStatus.includes(status)) throw new Error("Invalid draft status.");
+    draft.status = status;
+  }
+  if (Object.hasOwn(patch, "label")) draft.label = trim(patch.label, draft.label);
+  if (Object.hasOwn(patch, "text")) draft.text = trim(patch.text, draft.text);
+  draft.updatedAt = iso();
+  savePersistedState();
+  return draft;
 }
 
 export function getOperatorSession(sessionId) {
@@ -627,6 +936,17 @@ export function prepareOperatorSession(payload = {}) {
 
   operatorState.sessions.unshift(session);
   operatorState.sessions = operatorState.sessions.slice(0, 120);
+  patchProfileRecord(
+    profile.profileId,
+    {
+      ...profile,
+      status: "prepared",
+      issue: "",
+      activeSessionId: session.id,
+      lastPreparedAt: now
+    },
+    { save: false }
+  );
   savePersistedState();
   return {
     session,
@@ -643,6 +963,19 @@ export function startOperatorSession(sessionId) {
   if (!session.startedAt) session.startedAt = iso();
   if (!session.currentPrompt) scheduleNextPrompt(session, { immediate: true });
   session.updatedAt = iso();
+  patchProfileRecord(
+    session.profileId,
+    {
+      profileName: session.profileName,
+      profileType: session.profileType,
+      folderId: session.folderId,
+      status: "running",
+      issue: "",
+      activeSessionId: session.id,
+      lastStartedAt: session.startedAt
+    },
+    { save: false }
+  );
   savePersistedState();
   return session;
 }
@@ -678,8 +1011,35 @@ export function recordOperatorPromptOutcome(sessionId, payload = {}) {
 
   if (outcome === "attention") {
     session.status = "needs_attention";
+    patchProfileRecord(
+      session.profileId,
+      {
+        profileName: session.profileName,
+        profileType: session.profileType,
+        folderId: session.folderId,
+        status: "needs_attention",
+        issue: trim(payload.notes, "Manual attention needed."),
+        lastPromptAt: now,
+        attentionCountDelta: 1
+      },
+      { save: false }
+    );
   } else {
     session.status = "running";
+    patchProfileRecord(
+      session.profileId,
+      {
+        profileName: session.profileName,
+        profileType: session.profileType,
+        folderId: session.folderId,
+        status: "running",
+        issue: "",
+        lastPromptAt: now,
+        completedPromptsDelta: outcome === "done" ? 1 : 0,
+        skippedPromptsDelta: outcome === "skipped" ? 1 : 0
+      },
+      { save: false }
+    );
     scheduleNextPrompt(session);
   }
 
@@ -711,6 +1071,19 @@ export function stopOperatorSession(sessionId, payload = {}) {
   session.nextPromptAt = null;
   session.stoppedAt = now;
   session.updatedAt = now;
+  patchProfileRecord(
+    session.profileId,
+    {
+      profileName: session.profileName,
+      profileType: session.profileType,
+      folderId: session.folderId,
+      activeSessionId: "",
+      cooldownMinutes: Number.isFinite(Number(payload.cooldownMinutes)) ? Number(payload.cooldownMinutes) : 60,
+      lastStoppedAt: now,
+      issue: ""
+    },
+    { save: false }
+  );
   savePersistedState();
   return session;
 }

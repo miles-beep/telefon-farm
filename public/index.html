@@ -145,6 +145,18 @@
                 <strong id="dailyAttention">0</strong>
               </article>
             </div>
+            <div class="workbench-strip" aria-label="Quick operator controls">
+              <button id="openNextProfileButton" type="button">Open Next Ready Profile</button>
+              <button id="cooldownProfileButton" type="button" class="secondary">Cooldown 1h</button>
+              <button id="clearProfileIssueButton" type="button" class="secondary">Clear Issue</button>
+            </div>
+            <div class="recovery-grid" aria-label="Profile recovery states">
+              <button class="secondary profile-recovery-action" type="button" data-status="needs_login" data-issue="Login needed">Needs Login</button>
+              <button class="secondary profile-recovery-action" type="button" data-status="x_missing" data-issue="X app missing">X Missing</button>
+              <button class="secondary profile-recovery-action" type="button" data-status="stuck_play_store" data-issue="Stuck in Play Store">Stuck Store</button>
+              <button class="secondary profile-recovery-action" type="button" data-status="wrong_screen" data-issue="Wrong screen open">Wrong Screen</button>
+              <button class="secondary profile-recovery-action" type="button" data-status="phone_frozen" data-issue="Phone viewer frozen">Phone Frozen</button>
+            </div>
             <div class="session-grid">
               <div class="session-setup">
                 <label>
@@ -232,6 +244,54 @@
             </form>
             <div id="operatorAgents" class="operator-agents"></div>
             <div id="operatorTaskList" class="operator-task-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Profile Buckets</h2>
+              <span id="profileBucketSummary">0 ready</span>
+            </div>
+            <div id="profileBuckets" class="profile-buckets"></div>
+          </section>
+
+          <section class="split-grid operator-tools">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Review Queue</h2>
+                <span id="reviewQueueSummary">0 open</span>
+              </div>
+              <form id="reviewItemForm" class="form-grid">
+                <label>
+                  Review URL
+                  <input id="reviewItemUrl" type="url" value="https://x.com/home" autocomplete="off" />
+                </label>
+                <label>
+                  Note
+                  <textarea id="reviewItemNote" rows="2" placeholder="Why this needs review"></textarea>
+                </label>
+                <button type="submit">Add Review Item</button>
+              </form>
+              <div id="reviewQueueList" class="review-queue-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Comment Drafts</h2>
+                <span id="commentDraftSummary">0 active</span>
+              </div>
+              <form id="commentDraftForm" class="form-grid">
+                <label>
+                  Label
+                  <input id="commentDraftLabel" type="text" value="Draft" autocomplete="off" />
+                </label>
+                <label>
+                  Draft
+                  <textarea id="commentDraftText" rows="3" placeholder="Reusable manual comment text"></textarea>
+                </label>
+                <button type="submit">Add Draft</button>
+              </form>
+              <div id="commentDraftList" class="comment-draft-list"></div>
+            </section>
           </section>
 
           <section class="panel">

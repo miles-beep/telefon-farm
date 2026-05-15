@@ -32,6 +32,9 @@ const nodes = {
   sessionPresetSelect: $("#sessionPresetSelect"),
   sessionTargetUrl: $("#sessionTargetUrl"),
   sessionNotes: $("#sessionNotes"),
+  openNextProfileButton: $("#openNextProfileButton"),
+  cooldownProfileButton: $("#cooldownProfileButton"),
+  clearProfileIssueButton: $("#clearProfileIssueButton"),
   startWorkButton: $("#startWorkButton"),
   prepareSessionButton: $("#prepareSessionButton"),
   runSessionStartTaskButton: $("#runSessionStartTaskButton"),
@@ -53,6 +56,18 @@ const nodes = {
   dailyActive: $("#dailyActive"),
   dailyDone: $("#dailyDone"),
   dailyAttention: $("#dailyAttention"),
+  profileBucketSummary: $("#profileBucketSummary"),
+  profileBuckets: $("#profileBuckets"),
+  reviewQueueSummary: $("#reviewQueueSummary"),
+  reviewItemForm: $("#reviewItemForm"),
+  reviewItemUrl: $("#reviewItemUrl"),
+  reviewItemNote: $("#reviewItemNote"),
+  reviewQueueList: $("#reviewQueueList"),
+  commentDraftSummary: $("#commentDraftSummary"),
+  commentDraftForm: $("#commentDraftForm"),
+  commentDraftLabel: $("#commentDraftLabel"),
+  commentDraftText: $("#commentDraftText"),
+  commentDraftList: $("#commentDraftList"),
   metricProfiles: $("#metricProfiles"),
   metricLoggedIn: $("#metricLoggedIn"),
   metricSaved: $("#metricSaved"),
@@ -85,6 +100,13 @@ let multiloginProfilesState = {
 const TERMINAL_TASK_STATUSES = new Set(["completed", "cancelled"]);
 let queuePlanInFlight = false;
 let toastTimer = null;
+const PROFILE_BUCKETS = [
+  { id: "ready", label: "Ready" },
+  { id: "active", label: "Active" },
+  { id: "cooldown", label: "Cooldown" },
+  { id: "setup", label: "Setup" },
+  { id: "attention", label: "Attention" }
+];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -209,7 +231,8 @@ function renderMlxProfileCard(profile, compact = false) {
   const isMobile = profile.profileType === "mobile";
   const canStart = Boolean(profile.id && (isMobile || profile.folderId));
   const startLabel = isMobile ? "Start Bg" : "Start";
-  const status = profile.status || "unknown";
+  const record = profileRecord(profile.id);
+  const status = effectiveProfileStatus(profile);
   const details = [
     isMobile ? "Mobile" : "Browser",
     profile.folderName || profile.folderId,
@@ -219,6 +242,12 @@ function renderMlxProfileCard(profile, compact = false) {
   ]
     .filter(Boolean)
     .join(" | ");
+  const recordDetails = [
+    record?.issue ? `Issue: ${record.issue}` : "",
+    record?.cooldownUntil && isCooldownActive(record) ? `Cooldown until ${formatTime(record.cooldownUntil)}` : "",
+    record?.lastPromptAt ? `Last prompt ${formatRelative(record.lastPromptAt)}` : "",
+    record?.completedPrompts ? `${record.completedPrompts} done` : ""
+  ].filter(Boolean);
 
   return `
     <article class="${compact ? "mlx-profile compact" : "profile-card mlx-profile-card"}">
@@ -230,6 +259,7 @@ function renderMlxProfileCard(profile, compact = false) {
         <span class="tag ${escapeHtml(status)}">${escapeHtml(status.replaceAll("_", " "))}</span>
       </header>
       <div class="code">${escapeHtml(shortId(profile.id))}${profile.folderId ? ` | folder ${escapeHtml(shortId(profile.folderId))}` : ""}</div>
+      ${recordDetails.length ? `<div class="profile-record-line">${recordDetails.map((detail) => `<span>${escapeHtml(detail)}</span>`).join("")}</div>` : ""}
       <footer>
         <span>${profile.lastUsedAt ? `Last used ${escapeHtml(formatRelative(profile.lastUsedAt))}` : "Ready for manual control"}</span>
         <div class="button-row inline">
@@ -584,6 +614,54 @@ function multiloginProfileById(profileId) {
   return multiloginProfilesState.profiles.find((profile) => profile.id === profileId);
 }
 
+function profileRecord(profileId) {
+  return operatorState?.profileRecords?.[profileId] || null;
+}
+
+function isCooldownActive(record) {
+  return Boolean(record?.cooldownUntil && new Date(record.cooldownUntil).getTime() > Date.now());
+}
+
+function effectiveProfileStatus(profile) {
+  const session = activeSessionForProfile(profile.id);
+  if (session?.status === "running") return "running";
+  if (session?.status === "prepared") return "prepared";
+  if (session?.status === "needs_attention") return "needs_attention";
+
+  const record = profileRecord(profile.id);
+  if (record?.status === "cooldown") return isCooldownActive(record) ? "cooldown" : "ready";
+  if (record?.status) return record.status;
+  if (profile.status === "starting") return "starting";
+  return "ready";
+}
+
+function profileBucketId(profile) {
+  const status = effectiveProfileStatus(profile);
+  if (["running", "prepared", "starting"].includes(status)) return "active";
+  if (status === "cooldown") return "cooldown";
+  if (["needs_login", "x_missing"].includes(status)) return "setup";
+  if (["needs_attention", "wrong_screen", "stuck_play_store", "phone_frozen", "problem"].includes(status)) return "attention";
+  return "ready";
+}
+
+function readyProfiles() {
+  return multiloginProfilesState.profiles.filter((profile) => profileBucketId(profile) === "ready");
+}
+
+function nextReadyProfile() {
+  const ready = readyProfiles();
+  return ready.find((profile) => profile.profileType === "mobile") || ready[0] || null;
+}
+
+function selectedProfilePatch(profile, patch = {}) {
+  return {
+    profileName: profile?.name || "",
+    profileType: profile?.profileType || "browser",
+    folderId: profile?.folderId || "",
+    ...patch
+  };
+}
+
 function fillOperatorProfileSelect() {
   const previous = nodes.operatorProfileSelect.value;
   const profiles = multiloginProfilesState.profiles;
@@ -657,10 +735,17 @@ function renderSessionConsole() {
   const canRunStartTask = Boolean(startTask && ["queued", "failed"].includes(startTask.status));
   const canRecordPrompt = Boolean(session && session.status === "running" && prompt && promptDue);
   const canStartWork = Boolean(profile?.id) && (!session || ["prepared", "needs_attention"].includes(session.status));
+  const nextProfile = nextReadyProfile();
 
   nodes.sessionSummary.textContent = session
     ? `${session.profileName} | ${session.status.replaceAll("_", " ")}`
     : "No active session";
+  nodes.openNextProfileButton.disabled = !nextProfile;
+  nodes.cooldownProfileButton.disabled = !profile;
+  nodes.clearProfileIssueButton.disabled = !profile;
+  document.querySelectorAll(".profile-recovery-action").forEach((button) => {
+    button.disabled = !profile;
+  });
   nodes.startWorkButton.disabled = !canStartWork;
   nodes.prepareSessionButton.disabled = !canPrepare;
   nodes.runSessionStartTaskButton.disabled = !canRunStartTask;
@@ -813,6 +898,116 @@ function renderOperator() {
     .join("");
 }
 
+function renderProfileBuckets() {
+  if (!operatorState || !nodes.profileBuckets) return;
+
+  const groups = Object.fromEntries(PROFILE_BUCKETS.map((bucket) => [bucket.id, []]));
+  multiloginProfilesState.profiles.forEach((profile) => {
+    groups[profileBucketId(profile)].push(profile);
+  });
+
+  nodes.profileBucketSummary.textContent = `${groups.ready.length} ready, ${groups.attention.length} attention`;
+
+  if (!multiloginProfilesState.profiles.length) {
+    nodes.profileBuckets.innerHTML = `<p class="empty">Sync Multilogin profiles to build buckets.</p>`;
+    return;
+  }
+
+  nodes.profileBuckets.innerHTML = PROFILE_BUCKETS.map((bucket) => {
+    const profiles = groups[bucket.id] || [];
+    return `
+      <article class="profile-bucket ${escapeHtml(bucket.id)}">
+        <header>
+          <strong>${escapeHtml(bucket.label)}</strong>
+          <span>${profiles.length}</span>
+        </header>
+        <div>
+          ${
+            profiles.length
+              ? profiles
+                  .slice(0, 8)
+                  .map((profile) => {
+                    const record = profileRecord(profile.id);
+                    const issue = record?.issue ? ` | ${record.issue}` : "";
+                    return `
+                      <button class="bucket-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">
+                        ${escapeHtml(profile.name || profile.id)}${escapeHtml(issue)}
+                      </button>
+                    `;
+                  })
+                  .join("")
+              : `<p class="empty">None</p>`
+          }
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderReviewQueue() {
+  if (!operatorState || !nodes.reviewQueueList) return;
+  const items = (operatorState.reviewItems || []).filter((item) => item.status === "open");
+  nodes.reviewQueueSummary.textContent = `${items.length} open`;
+
+  if (!items.length) {
+    nodes.reviewQueueList.innerHTML = `<p class="empty">No review items.</p>`;
+    return;
+  }
+
+  nodes.reviewQueueList.innerHTML = items
+    .slice(0, 20)
+    .map(
+      (item) => `
+        <article class="review-item">
+          <header>
+            <strong>${escapeHtml(item.profileName || item.profileId)}</strong>
+            <span>${escapeHtml(formatRelative(item.createdAt))}</span>
+          </header>
+          <p>${escapeHtml(item.note || "Review this item manually.")}</p>
+          <div class="operator-task-meta">
+            <span>${escapeHtml(item.url || "https://x.com/home")}</span>
+          </div>
+          <footer>
+            <button class="secondary review-open-item" type="button" data-review-id="${escapeHtml(item.id)}">Open</button>
+            <button class="secondary review-status-item" type="button" data-review-id="${escapeHtml(item.id)}" data-status="done">Done</button>
+            <button class="secondary review-status-item" type="button" data-review-id="${escapeHtml(item.id)}" data-status="archived">Archive</button>
+          </footer>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderCommentDrafts() {
+  if (!operatorState || !nodes.commentDraftList) return;
+  const drafts = (operatorState.commentDrafts || []).filter((draft) => draft.status !== "archived");
+  nodes.commentDraftSummary.textContent = `${drafts.length} active`;
+
+  if (!drafts.length) {
+    nodes.commentDraftList.innerHTML = `<p class="empty">No drafts yet.</p>`;
+    return;
+  }
+
+  nodes.commentDraftList.innerHTML = drafts
+    .slice(0, 20)
+    .map(
+      (draft) => `
+        <article class="comment-draft">
+          <header>
+            <strong>${escapeHtml(draft.label || "Draft")}</strong>
+            <span>${draft.system ? "starter" : escapeHtml(formatRelative(draft.updatedAt))}</span>
+          </header>
+          <p>${escapeHtml(draft.text)}</p>
+          <footer>
+            <button class="secondary copy-comment-draft" type="button" data-draft-id="${escapeHtml(draft.id)}">Copy</button>
+            ${draft.system ? "" : `<button class="secondary archive-comment-draft" type="button" data-draft-id="${escapeHtml(draft.id)}">Archive</button>`}
+          </footer>
+        </article>
+      `
+    )
+    .join("");
+}
+
 function renderMultiloginProfiles() {
   if (!nodes.multiloginProfileList) return;
 
@@ -881,6 +1076,9 @@ function render() {
   renderOtpQueue();
   renderSessionConsole();
   renderOperator();
+  renderProfileBuckets();
+  renderReviewQueue();
+  renderCommentDrafts();
   renderMultilogin();
 }
 
@@ -993,6 +1191,33 @@ function sessionPayload(profile) {
     openX: profile.profileType === "mobile",
     runUiMacro: true
   };
+}
+
+async function updateProfileState(profile, patch, message) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  const result = await api(`/api/operator/profiles/${encodeURIComponent(profile.id)}/state`, {
+    method: "POST",
+    body: JSON.stringify(selectedProfilePatch(profile, patch))
+  });
+  operatorState = result.snapshot;
+  render();
+  if (message) showToast(message);
+  return result.record;
+}
+
+async function startWorkForProfile(profile, { message = "Work session started." } = {}) {
+  if (!profile) throw new Error("Sync and select a profile first.");
+  nodes.sessionProfileSelect.value = profile.id;
+  nodes.operatorProfileSelect.value = profile.id;
+  const result = await api("/api/operator/workflows/start", {
+    method: "POST",
+    body: JSON.stringify(sessionPayload(profile))
+  });
+  operatorState = result.snapshot;
+  render();
+  await loadMultiloginProfiles({ quiet: true });
+  if (message) showToast(message);
+  return result;
 }
 
 async function queueRandomPlan(profileId) {
@@ -1114,23 +1339,45 @@ nodes.operatorProfileSelect.addEventListener("change", () => {
 
 nodes.startWorkButton.addEventListener("click", async () => {
   const profile = selectedSessionProfile();
+  try {
+    nodes.startWorkButton.disabled = true;
+    await startWorkForProfile(profile);
+  } catch (error) {
+    await refreshOperator().catch(() => {});
+    showToast(error.message);
+  }
+});
+
+nodes.openNextProfileButton.addEventListener("click", async () => {
+  const profile = nextReadyProfile();
   if (!profile) {
-    showToast("Sync and select a profile first.");
+    showToast("No ready profile available.");
     return;
   }
 
   try {
-    nodes.startWorkButton.disabled = true;
-    const result = await api("/api/operator/workflows/start", {
-      method: "POST",
-      body: JSON.stringify(sessionPayload(profile))
-    });
-    operatorState = result.snapshot;
-    render();
-    await loadMultiloginProfiles({ quiet: true });
-    showToast("Work session started.");
+    nodes.openNextProfileButton.disabled = true;
+    await startWorkForProfile(profile, { message: `Opened ${profile.name || profile.id}.` });
   } catch (error) {
     await refreshOperator().catch(() => {});
+    showToast(error.message);
+  }
+});
+
+nodes.cooldownProfileButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  try {
+    await updateProfileState(profile, { cooldownMinutes: 60, issue: "" }, "Profile cooled down for 1h.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.clearProfileIssueButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  try {
+    await updateProfileState(profile, { status: "ready", cooldownUntil: null, activeSessionId: "", issue: "" }, "Profile marked ready.");
+  } catch (error) {
     showToast(error.message);
   }
 });
@@ -1317,6 +1564,50 @@ nodes.operatorTaskForm.addEventListener("submit", async (event) => {
   }
 });
 
+nodes.reviewItemForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const profile = selectedSessionProfile();
+
+  try {
+    const result = await api("/api/operator/review-items", {
+      method: "POST",
+      body: JSON.stringify({
+        ...selectedProfilePatch(profile),
+        profileId: profile?.id || "",
+        url: nodes.reviewItemUrl.value || nodes.sessionTargetUrl.value || "https://x.com/home",
+        note: nodes.reviewItemNote.value,
+        source: "dashboard"
+      })
+    });
+    operatorState = result.snapshot;
+    nodes.reviewItemNote.value = "";
+    render();
+    showToast("Review item added.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.commentDraftForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    const result = await api("/api/operator/comment-drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        label: nodes.commentDraftLabel.value,
+        text: nodes.commentDraftText.value
+      })
+    });
+    operatorState = result.snapshot;
+    nodes.commentDraftText.value = "";
+    render();
+    showToast("Draft added.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
 nodes.multiloginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const operation = nodes.multiloginOperationSelect.value;
@@ -1372,6 +1663,12 @@ document.addEventListener("click", async (event) => {
   const mlxOpenXButton = event.target.closest(".mlx-open-x");
   const mlxStopButton = event.target.closest(".mlx-stop-profile");
   const queueReviewButton = event.target.closest(".queue-profile-review");
+  const recoveryButton = event.target.closest(".profile-recovery-action");
+  const bucketProfileButton = event.target.closest(".bucket-profile");
+  const reviewOpenButton = event.target.closest(".review-open-item");
+  const reviewStatusButton = event.target.closest(".review-status-item");
+  const copyDraftButton = event.target.closest(".copy-comment-draft");
+  const archiveDraftButton = event.target.closest(".archive-comment-draft");
   const operatorRunButton = event.target.closest(".operator-run-task");
   const operatorStatusButton = event.target.closest(".operator-task-status");
 
@@ -1521,6 +1818,87 @@ document.addEventListener("click", async (event) => {
     }
   }
 
+  if (recoveryButton) {
+    const profile = selectedSessionProfile();
+    try {
+      await updateProfileState(
+        profile,
+        {
+          status: recoveryButton.dataset.status,
+          issue: recoveryButton.dataset.issue || recoveryButton.textContent.trim()
+        },
+        "Profile state updated."
+      );
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (bucketProfileButton) {
+    const profile = multiloginProfileById(bucketProfileButton.dataset.profileId);
+    if (profile) {
+      nodes.sessionProfileSelect.value = profile.id;
+      nodes.operatorProfileSelect.value = profile.id;
+      render();
+    }
+  }
+
+  if (reviewOpenButton) {
+    const item = (operatorState?.reviewItems || []).find((entry) => entry.id === reviewOpenButton.dataset.reviewId);
+    const profile = item ? multiloginProfileById(item.profileId) : null;
+    if (!item || !profile) {
+      showToast("Sync the review profile first.");
+    } else {
+      try {
+        nodes.sessionTargetUrl.value = item.url || "https://x.com/home";
+        nodes.sessionNotes.value = item.note || nodes.sessionNotes.value;
+        await startWorkForProfile(profile, { message: "Review profile opened." });
+      } catch (error) {
+        await refreshOperator().catch(() => {});
+        showToast(error.message);
+      }
+    }
+  }
+
+  if (reviewStatusButton) {
+    try {
+      const result = await api(`/api/operator/review-items/${encodeURIComponent(reviewStatusButton.dataset.reviewId)}`, {
+        method: "POST",
+        body: JSON.stringify({ status: reviewStatusButton.dataset.status })
+      });
+      operatorState = result.snapshot;
+      render();
+      showToast(`Review item ${reviewStatusButton.dataset.status}.`);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (copyDraftButton) {
+    const draft = (operatorState?.commentDrafts || []).find((entry) => entry.id === copyDraftButton.dataset.draftId);
+    if (!draft) return;
+    try {
+      await navigator.clipboard.writeText(draft.text);
+      showToast("Draft copied.");
+    } catch {
+      showToast(draft.text);
+    }
+  }
+
+  if (archiveDraftButton) {
+    try {
+      const result = await api(`/api/operator/comment-drafts/${encodeURIComponent(archiveDraftButton.dataset.draftId)}`, {
+        method: "POST",
+        body: JSON.stringify({ status: "archived" })
+      });
+      operatorState = result.snapshot;
+      render();
+      showToast("Draft archived.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
   if (operatorRunButton) {
     try {
       const result = await api(`/api/operator/tasks/${operatorRunButton.dataset.taskId}/run`, {
@@ -1552,6 +1930,19 @@ document.addEventListener("click", async (event) => {
       showToast(error.message);
     }
   }
+});
+
+document.addEventListener("keydown", (event) => {
+  const tagName = event.target?.tagName?.toLowerCase();
+  if (["input", "select", "textarea", "button"].includes(tagName) || event.metaKey || event.ctrlKey || event.altKey) return;
+
+  const key = event.key.toLowerCase();
+  if (key === "n") nodes.openNextProfileButton.click();
+  if (key === "d") nodes.sessionPromptDoneButton.click();
+  if (key === "s") nodes.sessionPromptSkipButton.click();
+  if (key === "a") nodes.sessionPromptAttentionButton.click();
+  if (key === "x") nodes.openSessionXButton.click();
+  if (key === "c") nodes.cooldownProfileButton.click();
 });
 
 loadState().then(() => {
