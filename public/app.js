@@ -27,12 +27,29 @@ const nodes = {
   operatorNotes: $("#operatorNotes"),
   operatorAgents: $("#operatorAgents"),
   operatorTaskList: $("#operatorTaskList"),
-  startActionsButton: $("#startActionsButton"),
-  stopActionsButton: $("#stopActionsButton"),
-  markActionDoneButton: $("#markActionDoneButton"),
-  actionRunnerStatus: $("#actionRunnerStatus"),
-  actionRunnerDetail: $("#actionRunnerDetail"),
-  actionRunnerPrompt: $("#actionRunnerPrompt"),
+  sessionSummary: $("#sessionSummary"),
+  sessionProfileSelect: $("#sessionProfileSelect"),
+  sessionPresetSelect: $("#sessionPresetSelect"),
+  sessionTargetUrl: $("#sessionTargetUrl"),
+  sessionNotes: $("#sessionNotes"),
+  prepareSessionButton: $("#prepareSessionButton"),
+  runSessionStartTaskButton: $("#runSessionStartTaskButton"),
+  startSessionButton: $("#startSessionButton"),
+  openSessionViewerButton: $("#openSessionViewerButton"),
+  stopSessionButton: $("#stopSessionButton"),
+  sessionStatusTitle: $("#sessionStatusTitle"),
+  sessionStatusDetail: $("#sessionStatusDetail"),
+  sessionStatusTag: $("#sessionStatusTag"),
+  sessionSafetyList: $("#sessionSafetyList"),
+  sessionPromptCard: $("#sessionPromptCard"),
+  sessionPromptDoneButton: $("#sessionPromptDoneButton"),
+  sessionPromptSkipButton: $("#sessionPromptSkipButton"),
+  sessionPromptAttentionButton: $("#sessionPromptAttentionButton"),
+  sessionLog: $("#sessionLog"),
+  dailyProfiles: $("#dailyProfiles"),
+  dailyActive: $("#dailyActive"),
+  dailyDone: $("#dailyDone"),
+  dailyAttention: $("#dailyAttention"),
   metricProfiles: $("#metricProfiles"),
   metricLoggedIn: $("#metricLoggedIn"),
   metricSaved: $("#metricSaved"),
@@ -62,65 +79,7 @@ let multiloginProfilesState = {
   error: null,
   lastLoadedAt: null
 };
-const ACTION_RUNNER_ACTIONS = [
-  {
-    id: "scroll",
-    label: "Scroll",
-    detail: "Scroll manually for 15 seconds.",
-    durationSec: 15
-  },
-  {
-    id: "open_post",
-    label: "Open post",
-    detail: "Open one post manually."
-  },
-  {
-    id: "like_review",
-    label: "Review like",
-    detail: "Like one post only if you choose."
-  },
-  {
-    id: "repost_review",
-    label: "Review repost",
-    detail: "Repost one post only if you choose."
-  },
-  {
-    id: "comment_draft",
-    label: "Comment draft",
-    detail: "Write one comment manually."
-  }
-];
-const RANDOM_PLAN_FUNCTIONS = [
-  {
-    functionId: "scroll_prompt",
-    notes: "Scroll manually for 15 seconds."
-  },
-  {
-    functionId: "open_post_prompt",
-    notes: "Open one post manually."
-  },
-  {
-    functionId: "like_post_prompt",
-    notes: "Review one post and like manually only if you choose."
-  },
-  {
-    functionId: "repost_prompt",
-    notes: "Review one post and repost manually only if you choose."
-  },
-  {
-    functionId: "comment_prompt",
-    notes: "Draft and post one comment manually."
-  }
-];
 const TERMINAL_TASK_STATUSES = new Set(["completed", "cancelled"]);
-let actionRunner = {
-  active: false,
-  timer: null,
-  nextAt: null,
-  current: null,
-  profileId: "",
-  history: []
-};
 let queuePlanInFlight = false;
 let toastTimer = null;
 
@@ -189,14 +148,6 @@ function shortId(value) {
   return text.length > 13 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
 }
 
-function randomInt(min, max) {
-  return Math.floor(min + Math.random() * (max - min + 1));
-}
-
-function pickRandom(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
 function fillSelect(select, items, getLabel, getValue = (item) => item.id) {
   const previous = select.value;
   select.innerHTML = items
@@ -225,15 +176,15 @@ function renderOptions() {
 
 function renderMetrics() {
   const analytics = appState.analytics;
-  const profiles = multiloginProfilesState.profiles;
-  const readyProfiles = profiles.filter((profile) =>
-    ["ready", "running", "browser_running", "active"].includes(String(profile.status || "").toLowerCase())
-  ).length;
-  const operatorSummary = operatorState?.summary ?? {};
+  const overview = operatorState?.dailyOverview ?? {};
   nodes.metricProfiles.textContent = multiloginProfilesState.total || analytics.totalAccounts;
-  nodes.metricLoggedIn.textContent = profiles.length ? readyProfiles : analytics.loggedInProfiles;
-  nodes.metricSaved.textContent = operatorSummary.totalTasks ?? analytics.savedPosts;
-  nodes.metricReview.textContent = operatorSummary.runningTasks ?? analytics.flaggedAccounts;
+  nodes.metricLoggedIn.textContent = overview.activeSessions ?? analytics.loggedInProfiles;
+  nodes.metricSaved.textContent = overview.completedPrompts ?? analytics.savedPosts;
+  nodes.metricReview.textContent = overview.attentionItems ?? analytics.flaggedAccounts;
+  nodes.dailyProfiles.textContent = overview.profilesUsedToday ?? 0;
+  nodes.dailyActive.textContent = overview.activeSessions ?? 0;
+  nodes.dailyDone.textContent = overview.completedPrompts ?? 0;
+  nodes.dailyAttention.textContent = overview.attentionItems ?? 0;
   nodes.profileSummary.textContent = multiloginProfilesState.total
     ? `${multiloginProfilesState.total} Multilogin profile(s)`
     : `${analytics.loggedInProfiles} logged in, ${analytics.verifiedAccounts} verified`;
@@ -518,7 +469,7 @@ function renderEvents() {
 
 function renderAgents() {
   if (!appState.agents.length) {
-    nodes.agentRows.innerHTML = `<p class="empty">No local agents running.</p>`;
+    nodes.agentRows.innerHTML = `<p class="empty">No local demo workers running.</p>`;
     return;
   }
 
@@ -605,7 +556,7 @@ function operatorFunctionById(functionId) {
 }
 
 function operatorAgentById(agentId) {
-  return operatorState?.agents.find((agent) => agent.id === agentId);
+  return (operatorState?.operators || operatorState?.agents || []).find((agent) => agent.id === agentId);
 }
 
 function multiloginProfileById(profileId) {
@@ -628,16 +579,151 @@ function fillOperatorProfileSelect() {
   if (profiles.some((profile) => profile.id === previous)) nodes.operatorProfileSelect.value = previous;
 }
 
+function fillSessionProfileSelect() {
+  const previous = nodes.sessionProfileSelect.value || nodes.operatorProfileSelect.value;
+  const profiles = multiloginProfilesState.profiles;
+
+  nodes.sessionProfileSelect.innerHTML = profiles.length
+    ? profiles
+        .map(
+          (profile) =>
+            `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name || profile.id)} (${escapeHtml(profile.profileType || "browser")})</option>`
+        )
+        .join("")
+    : `<option value="">Sync profiles first</option>`;
+
+  if (profiles.some((profile) => profile.id === previous)) nodes.sessionProfileSelect.value = previous;
+}
+
+function fillSessionPresetSelect() {
+  const presets = operatorState?.presets || [];
+  const previous = nodes.sessionPresetSelect.value;
+  nodes.sessionPresetSelect.innerHTML = presets.length
+    ? presets.map((preset) => `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.label)}</option>`).join("")
+    : `<option value="">No presets</option>`;
+  if (presets.some((preset) => preset.id === previous)) nodes.sessionPresetSelect.value = previous;
+}
+
+function activeSessionForProfile(profileId) {
+  const activeStatuses = new Set(["prepared", "running", "needs_attention"]);
+  return (operatorState?.sessions || []).find((session) => session.profileId === profileId && activeStatuses.has(session.status));
+}
+
+function selectedSessionProfile() {
+  return multiloginProfileById(nodes.sessionProfileSelect.value);
+}
+
+function selectedSession() {
+  const profile = selectedSessionProfile();
+  if (profile?.id) return activeSessionForProfile(profile.id) || null;
+  return operatorState?.activeSession || null;
+}
+
+function renderSessionConsole() {
+  if (!operatorState) return;
+
+  fillSessionProfileSelect();
+  fillSessionPresetSelect();
+
+  const profile = selectedSessionProfile();
+  const session = selectedSession();
+  const prompt = session?.currentPrompt || null;
+  const startTask = session?.startTaskId ? operatorState.tasks.find((task) => task.id === session.startTaskId) : null;
+  const canPrepare = Boolean(profile?.id) && !activeSessionForProfile(profile.id);
+  const canStart = Boolean(session && ["prepared", "needs_attention"].includes(session.status));
+  const canStop = Boolean(session && session.status !== "stopped");
+  const canRunStartTask = Boolean(startTask && ["queued", "failed"].includes(startTask.status));
+  const canRecordPrompt = Boolean(session && session.status === "running" && prompt);
+
+  nodes.sessionSummary.textContent = session
+    ? `${session.profileName} | ${session.status.replaceAll("_", " ")}`
+    : "No active session";
+  nodes.prepareSessionButton.disabled = !canPrepare;
+  nodes.runSessionStartTaskButton.disabled = !canRunStartTask;
+  nodes.startSessionButton.disabled = !canStart;
+  nodes.openSessionViewerButton.disabled = !profile || profile.profileType !== "mobile";
+  nodes.stopSessionButton.disabled = !canStop;
+  nodes.sessionPromptDoneButton.disabled = !canRecordPrompt;
+  nodes.sessionPromptSkipButton.disabled = !canRecordPrompt;
+  nodes.sessionPromptAttentionButton.disabled = !canRecordPrompt;
+
+  if (!session) {
+    nodes.sessionStatusTitle.textContent = profile ? profile.name || profile.id : "Select a profile";
+    nodes.sessionStatusDetail.textContent = profile
+      ? "Prepare the profile to queue one start task and create a persistent session."
+      : "Sync Multilogin profiles, prepare a profile, then start a session.";
+    nodes.sessionStatusTag.textContent = "idle";
+    nodes.sessionStatusTag.className = "tag idle";
+    nodes.sessionSafetyList.innerHTML = `<p>Profile lifecycle controls only. Website actions are local prompts you complete manually.</p>`;
+    nodes.sessionPromptCard.innerHTML = `<p class="empty">No session prompt yet.</p>`;
+    nodes.sessionLog.innerHTML = `<p class="empty">No session log yet.</p>`;
+    return;
+  }
+
+  nodes.sessionStatusTitle.textContent = `${session.profileName} | ${session.presetLabel}`;
+  nodes.sessionStatusDetail.textContent =
+    session.status === "prepared"
+      ? `Prepared. Start task is ${startTask?.status || "queued"}; run it if needed, then start the session.`
+      : session.status === "needs_attention"
+        ? "Paused for review. Resolve the issue, add a note if needed, then start the session again."
+        : `Running since ${formatTime(session.startedAt)}.`;
+  nodes.sessionStatusTag.textContent = session.status.replaceAll("_", " ");
+  nodes.sessionStatusTag.className = `tag ${session.status}`;
+  nodes.sessionSafetyList.innerHTML = (session.warnings || [])
+    .map((warning) => `<p>${escapeHtml(warning)}</p>`)
+    .join("");
+
+  if (prompt) {
+    const futureMs = new Date(prompt.scheduledFor).getTime() - Date.now();
+    const waitingText = futureMs > 1000 ? `Scheduled for ${formatTime(prompt.scheduledFor)}` : "Ready now";
+    nodes.sessionPromptCard.innerHTML = `
+      <header>
+        <div>
+          <strong>${escapeHtml(prompt.label)}</strong>
+          <p>${escapeHtml(waitingText)}${prompt.delaySec ? ` | delay ${escapeHtml(prompt.delaySec)}s` : ""}</p>
+        </div>
+        <span class="tag queued">${escapeHtml(session.status)}</span>
+      </header>
+      <p>${escapeHtml(prompt.detail)}</p>
+      ${prompt.targetUrl ? `<div class="operator-task-meta"><span>${escapeHtml(prompt.targetUrl)}</span></div>` : ""}
+    `;
+  } else {
+    nodes.sessionPromptCard.innerHTML =
+      session.status === "needs_attention"
+        ? `<p class="empty">Session needs attention. Add a note and start again when ready.</p>`
+        : `<p class="empty">No prompt is active.</p>`;
+  }
+
+  const events = session.events || [];
+  nodes.sessionLog.innerHTML = events.length
+    ? events
+        .slice(0, 8)
+        .map(
+          (event) => `
+            <article>
+              <header>
+                <strong>${escapeHtml(event.label)}</strong>
+                <span class="tag ${escapeHtml(event.outcome)}">${escapeHtml(event.outcome.replaceAll("_", " "))}</span>
+              </header>
+              <p>${escapeHtml(formatRelative(event.createdAt))}${event.notes ? ` | ${escapeHtml(event.notes)}` : ""}</p>
+            </article>
+          `
+        )
+        .join("")
+    : `<p class="empty">No outcomes recorded yet.</p>`;
+}
+
 function renderOperator() {
   if (!operatorState) return;
 
-  fillSelect(nodes.operatorAgentSelect, operatorState.agents, (agent) => agent.name);
+  const operators = operatorState.operators || operatorState.agents || [];
+  fillSelect(nodes.operatorAgentSelect, operators, (agent) => agent.name);
   fillSelect(nodes.operatorFunctionSelect, operatorState.functions, (fn) => fn.label, (fn) => fn.id);
   fillOperatorProfileSelect();
 
   const summary = operatorState.summary;
   nodes.operatorSummary.textContent = `${summary.queuedTasks} queued, ${summary.runningTasks} running`;
-  nodes.operatorAgents.innerHTML = operatorState.agents
+  nodes.operatorAgents.innerHTML = operators
     .map(
       (agent) => `
         <article class="operator-agent">
@@ -696,62 +782,6 @@ function renderOperator() {
       `;
     })
     .join("");
-}
-
-function renderActionRunner() {
-  const status = actionRunner.active ? "running" : "idle";
-  const profile = multiloginProfileById(actionRunner.profileId || nodes.operatorProfileSelect.value);
-  nodes.actionRunnerStatus.textContent = status;
-  nodes.actionRunnerStatus.className = `tag ${status}`;
-  nodes.startActionsButton.disabled = actionRunner.active || !profile;
-  nodes.stopActionsButton.disabled = !actionRunner.active;
-  nodes.markActionDoneButton.disabled = !actionRunner.active || !actionRunner.current;
-
-  if (!actionRunner.active) {
-    nodes.actionRunnerDetail.textContent = "Idle";
-    nodes.actionRunnerPrompt.textContent = profile ? "Ready." : "Sync profiles first.";
-    return;
-  }
-
-  const next = actionRunner.nextAt ? formatTime(actionRunner.nextAt) : "pending";
-  nodes.actionRunnerDetail.textContent = `${profile?.name ?? "Profile"} | next ${next}`;
-  nodes.actionRunnerPrompt.innerHTML = actionRunner.current
-    ? `
-      <strong>${escapeHtml(actionRunner.current.label)}</strong>
-      <p>${escapeHtml(actionRunner.current.detail)}</p>
-    `
-    : `<p>Waiting for next action.</p>`;
-}
-
-function scheduleNextAction({ immediate = false } = {}) {
-  clearTimeout(actionRunner.timer);
-  if (!actionRunner.active) return;
-
-  const delaySec = immediate ? 0 : randomInt(10, 230);
-  actionRunner.nextAt = new Date(Date.now() + delaySec * 1000).toISOString();
-  renderActionRunner();
-
-  actionRunner.timer = setTimeout(() => {
-    actionRunner.current = {
-      ...pickRandom(ACTION_RUNNER_ACTIONS),
-      promptedAt: new Date().toISOString()
-    };
-    actionRunner.nextAt = null;
-    renderActionRunner();
-  }, delaySec * 1000);
-}
-
-function stopActionRunner() {
-  clearTimeout(actionRunner.timer);
-  actionRunner = {
-    active: false,
-    timer: null,
-    nextAt: null,
-    current: null,
-    profileId: "",
-    history: actionRunner.history
-  };
-  renderActionRunner();
 }
 
 function renderMultiloginProfiles() {
@@ -820,8 +850,8 @@ function render() {
   renderAgents();
   renderAccountsTable();
   renderOtpQueue();
+  renderSessionConsole();
   renderOperator();
-  renderActionRunner();
   renderMultilogin();
 }
 
@@ -897,7 +927,8 @@ async function refreshOperator() {
 
 async function queueOperatorTask({ functionId, profileId, targetUrl, notes, delaySec = 0, silent = false }) {
   const profile = multiloginProfileById(profileId);
-  const agent = operatorState?.agents.find((item) => item.functionIds.includes(functionId)) ?? operatorState?.agents[0];
+  const operators = operatorState?.operators || operatorState?.agents || [];
+  const agent = operators.find((item) => item.functionIds.includes(functionId)) ?? operators[0];
   const scheduledFor = delaySec ? new Date(Date.now() + delaySec * 1000).toISOString() : "";
   const task = await api("/api/operator/tasks", {
     method: "POST",
@@ -920,56 +951,33 @@ async function queueOperatorTask({ functionId, profileId, targetUrl, notes, dela
   return task.task;
 }
 
-function hasStartTaskForProfile(profileId) {
-  return operatorState?.tasks.some(
-    (task) =>
-      task.profileId === profileId &&
-      task.functionId === "start_profile" &&
-      !["cancelled", "failed"].includes(task.status)
-  );
-}
-
 async function queueRandomPlan(profileId) {
   const profile = multiloginProfileById(profileId);
   if (!profile) throw new Error("Sync and select a profile first.");
   if (queuePlanInFlight) return;
 
   queuePlanInFlight = true;
-  const queued = [];
   try {
-    const needsStartTask = !hasStartTaskForProfile(profile.id);
-
-    if (needsStartTask) {
-      queued.push(
-        await queueOperatorTask({
-          functionId: "start_profile",
-          profileId: profile.id,
-          targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
-          notes: "Start once before the action plan.",
-          delaySec: 0,
-          silent: true
-        })
-      );
-    }
-
-    const actionCount = needsStartTask ? randomInt(4, 7) : 1;
-    let cursorSec = randomInt(10, 230);
-    for (let index = 0; index < actionCount; index += 1) {
-      const action = pickRandom(RANDOM_PLAN_FUNCTIONS);
-      queued.push(
-        await queueOperatorTask({
-          functionId: action.functionId,
-          profileId: profile.id,
-          targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
-          notes: action.notes,
-          delaySec: cursorSec,
-          silent: true
-        })
-      );
-      cursorSec += randomInt(10, 230);
-    }
-
-    showToast(needsStartTask ? `Queued start plus ${queued.length - 1} random task(s).` : "Queued one random task.");
+    const result = await api("/api/operator/plan", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: nodes.operatorAgentSelect.value,
+        presetId: nodes.sessionPresetSelect.value || "review_mode",
+        profileId: profile.id,
+        profileName: profile.name,
+        profileType: profile.profileType || "browser",
+        folderId: profile.folderId || "",
+        targetUrl: nodes.operatorTargetUrl.value || nodes.sessionTargetUrl.value || "https://x.com/home",
+        notes: nodes.operatorNotes.value || nodes.sessionNotes.value
+      })
+    });
+    operatorState = result.snapshot;
+    render();
+    showToast(
+      result.startTaskAdded
+        ? `Queued start plus ${Math.max(0, result.tasks.length - 1)} random prompt(s).`
+        : "Queued one random prompt."
+    );
   } finally {
     queuePlanInFlight = false;
   }
@@ -1050,6 +1058,146 @@ nodes.multiloginProfileSearch.addEventListener("keydown", (event) => {
   }
 });
 
+nodes.sessionProfileSelect.addEventListener("change", () => {
+  nodes.operatorProfileSelect.value = nodes.sessionProfileSelect.value;
+  renderSessionConsole();
+});
+
+nodes.operatorProfileSelect.addEventListener("change", () => {
+  nodes.sessionProfileSelect.value = nodes.operatorProfileSelect.value;
+  renderSessionConsole();
+});
+
+nodes.prepareSessionButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  if (!profile) {
+    showToast("Sync and select a profile first.");
+    return;
+  }
+
+  try {
+    const result = await api("/api/operator/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: nodes.operatorAgentSelect.value,
+        presetId: nodes.sessionPresetSelect.value || "review_mode",
+        profileId: profile.id,
+        profileName: profile.name,
+        profileType: profile.profileType || "browser",
+        folderId: profile.folderId || "",
+        targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
+        notes: nodes.sessionNotes.value
+      })
+    });
+    operatorState = result.snapshot;
+    render();
+    showToast("Profile session prepared.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.runSessionStartTaskButton.addEventListener("click", async () => {
+  const session = selectedSession();
+  if (!session?.startTaskId) {
+    showToast("Prepare a session first.");
+    return;
+  }
+
+  try {
+    const result = await api(`/api/operator/tasks/${encodeURIComponent(session.startTaskId)}/run`, {
+      method: "POST",
+      body: "{}"
+    });
+    operatorState = result.snapshot;
+    render();
+    if (result.task.functionId === "start_profile" || result.task.functionId === "stop_profile") {
+      await loadMultiloginProfiles({ quiet: true });
+    }
+    showToast(`${result.task.functionLabel} ${result.task.status}.`);
+  } catch (error) {
+    await refreshOperator().catch(() => {});
+    showToast(error.message);
+  }
+});
+
+nodes.startSessionButton.addEventListener("click", async () => {
+  const session = selectedSession();
+  if (!session) {
+    showToast("Prepare a session first.");
+    return;
+  }
+
+  try {
+    const result = await api(`/api/operator/sessions/${encodeURIComponent(session.id)}/start`, {
+      method: "POST",
+      body: "{}"
+    });
+    operatorState = result.snapshot;
+    render();
+    showToast("Session started.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.stopSessionButton.addEventListener("click", async () => {
+  const session = selectedSession();
+  if (!session) return;
+
+  try {
+    const result = await api(`/api/operator/sessions/${encodeURIComponent(session.id)}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ notes: nodes.sessionNotes.value })
+    });
+    operatorState = result.snapshot;
+    render();
+    showToast("Session stopped.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+nodes.openSessionViewerButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  if (!profile) return;
+
+  try {
+    await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
+      method: "POST",
+      body: JSON.stringify({ profileType: profile.profileType })
+    });
+    await loadMultiloginProfiles({ quiet: true });
+    showToast("Opened Multilogin viewer.");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+async function recordSessionPrompt(outcome) {
+  const session = selectedSession();
+  if (!session) return;
+
+  try {
+    const result = await api(`/api/operator/sessions/${encodeURIComponent(session.id)}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({
+        outcome,
+        notes: nodes.sessionNotes.value
+      })
+    });
+    operatorState = result.snapshot;
+    render();
+    showToast(outcome === "attention" ? "Session marked for attention." : "Prompt recorded.");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+nodes.sessionPromptDoneButton.addEventListener("click", () => recordSessionPrompt("done"));
+nodes.sessionPromptSkipButton.addEventListener("click", () => recordSessionPrompt("skipped"));
+nodes.sessionPromptAttentionButton.addEventListener("click", () => recordSessionPrompt("attention"));
+
 nodes.operatorTaskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -1070,54 +1218,6 @@ nodes.operatorTaskForm.addEventListener("submit", async (event) => {
   } catch (error) {
     showToast(error.message);
   }
-});
-
-nodes.startActionsButton.addEventListener("click", async () => {
-  const profile = multiloginProfileById(nodes.operatorProfileSelect.value);
-  if (!profile) {
-    showToast("Sync and select a profile first.");
-    return;
-  }
-
-  try {
-    await queueOperatorTask({
-      functionId: "manual_x_review",
-      profileId: profile.id,
-      targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
-      notes: "Action runner session"
-    });
-  } catch (error) {
-    showToast(error.message);
-  }
-
-  actionRunner = {
-    active: true,
-    timer: null,
-    nextAt: null,
-    current: null,
-    profileId: profile.id,
-    history: actionRunner.history
-  };
-  scheduleNextAction({ immediate: true });
-  showToast("Action runner started.");
-});
-
-nodes.stopActionsButton.addEventListener("click", () => {
-  stopActionRunner();
-  showToast("Action runner stopped.");
-});
-
-nodes.markActionDoneButton.addEventListener("click", () => {
-  if (!actionRunner.current) return;
-  actionRunner.history.unshift({
-    ...actionRunner.current,
-    doneAt: new Date().toISOString(),
-    profileId: actionRunner.profileId
-  });
-  actionRunner.history = actionRunner.history.slice(0, 50);
-  actionRunner.current = null;
-  scheduleNextAction();
-  showToast("Action recorded locally.");
 });
 
 nodes.multiloginForm.addEventListener("submit", async (event) => {

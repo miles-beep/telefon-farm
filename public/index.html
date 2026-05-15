@@ -22,15 +22,15 @@
           <strong id="metricProfiles">0</strong>
         </article>
         <article class="metric">
-          <span>Ready</span>
+          <span>Sessions</span>
           <strong id="metricLoggedIn">0</strong>
         </article>
         <article class="metric">
-          <span>Tasks</span>
+          <span>Prompts today</span>
           <strong id="metricSaved">0</strong>
         </article>
         <article class="metric warning">
-          <span>Running</span>
+          <span>Attention</span>
           <strong id="metricReview">0</strong>
         </article>
       </section>
@@ -122,14 +122,87 @@
         </aside>
 
         <section class="main-column">
+          <section class="panel session-panel">
+            <div class="panel-heading">
+              <h2>Profile Console</h2>
+              <span id="sessionSummary">No active session</span>
+            </div>
+            <div class="daily-overview" aria-label="Daily overview">
+              <article>
+                <span>Profiles today</span>
+                <strong id="dailyProfiles">0</strong>
+              </article>
+              <article>
+                <span>Active</span>
+                <strong id="dailyActive">0</strong>
+              </article>
+              <article>
+                <span>Done</span>
+                <strong id="dailyDone">0</strong>
+              </article>
+              <article>
+                <span>Needs attention</span>
+                <strong id="dailyAttention">0</strong>
+              </article>
+            </div>
+            <div class="session-grid">
+              <div class="session-setup">
+                <label>
+                  Profile
+                  <select id="sessionProfileSelect"></select>
+                </label>
+                <label>
+                  Preset
+                  <select id="sessionPresetSelect"></select>
+                </label>
+                <label>
+                  Target
+                  <input id="sessionTargetUrl" type="url" value="https://x.com/home" autocomplete="off" />
+                </label>
+                <label>
+                  Session notes
+                  <textarea id="sessionNotes" rows="3" placeholder="Goal, context, or outcome notes"></textarea>
+                </label>
+                <div class="button-row">
+                  <button id="prepareSessionButton" type="button">Prepare Profile</button>
+                  <button id="runSessionStartTaskButton" type="button" class="secondary">Run Start</button>
+                </div>
+                <div class="button-row">
+                  <button id="startSessionButton" type="button" class="secondary">Start Session</button>
+                  <button id="openSessionViewerButton" type="button" class="secondary">Viewer</button>
+                </div>
+                <div class="button-row single">
+                  <button id="stopSessionButton" type="button" class="secondary">Stop Session</button>
+                </div>
+              </div>
+              <div class="session-work">
+                <div class="session-status">
+                  <div>
+                    <strong id="sessionStatusTitle">Select a profile</strong>
+                    <p id="sessionStatusDetail">Sync Multilogin profiles, prepare a profile, then start a session.</p>
+                  </div>
+                  <span id="sessionStatusTag" class="tag idle">idle</span>
+                </div>
+                <div id="sessionSafetyList" class="safety-list"></div>
+                <div id="sessionPromptCard" class="session-prompt-card"></div>
+                <div class="button-row inline">
+                  <button id="sessionPromptDoneButton" type="button">Done</button>
+                  <button id="sessionPromptSkipButton" type="button" class="secondary">Skip</button>
+                  <button id="sessionPromptAttentionButton" type="button" class="secondary">Needs attention</button>
+                </div>
+                <div id="sessionLog" class="session-log"></div>
+              </div>
+            </div>
+          </section>
+
           <section class="panel operator-panel">
             <div class="panel-heading">
-              <h2>Operator Console</h2>
+              <h2>Operator Queue</h2>
               <span id="operatorSummary">0 queued</span>
             </div>
             <form id="operatorTaskForm" class="operator-grid">
               <label>
-                Agent
+                Operator
                 <select id="operatorAgentSelect"></select>
               </label>
               <label>
@@ -150,23 +223,6 @@
               </label>
               <button type="submit">Queue Task</button>
             </form>
-            <div class="action-runner">
-              <header>
-                <div>
-                  <strong>Action Runner</strong>
-                  <p id="actionRunnerDetail">Idle</p>
-                </div>
-                <span id="actionRunnerStatus" class="tag idle">idle</span>
-              </header>
-              <div class="button-row inline">
-                <button id="startActionsButton" type="button">Start Actions</button>
-                <button id="markActionDoneButton" type="button" class="secondary" disabled>Done</button>
-                <button id="stopActionsButton" type="button" class="secondary" disabled>Stop</button>
-              </div>
-              <div id="actionRunnerPrompt" class="action-runner-prompt">
-                Select a profile, then start.
-              </div>
-            </div>
             <div id="operatorAgents" class="operator-agents"></div>
             <div id="operatorTaskList" class="operator-task-list"></div>
           </section>
@@ -207,7 +263,7 @@
 
             <section class="panel">
               <div class="panel-heading">
-                <h2>Agent Health</h2>
+                <h2>Worker Health</h2>
                 <span id="agentMonitorSummary">0 running</span>
               </div>
               <div id="agentRows" class="agent-list"></div>

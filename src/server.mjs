@@ -33,11 +33,16 @@ import {
 } from "./multiloginClient.mjs";
 import {
   completeOperatorTask,
+  createOperatorPlan,
+  prepareOperatorSession,
   createOperatorTask,
   failOperatorTask,
   getOperatorSnapshot,
   getOperatorTask,
   markOperatorTaskRunning,
+  recordOperatorPromptOutcome,
+  startOperatorSession,
+  stopOperatorSession,
   updateOperatorTask
 } from "./operatorState.mjs";
 
@@ -139,6 +144,73 @@ async function handleApi(request, response, url) {
     const task = createOperatorTask(body);
     sendJson(response, 201, {
       task,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/operator/plan") {
+    const body = await readJsonBody(request);
+    const plan = createOperatorPlan(body);
+    sendJson(response, 201, {
+      ...plan,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/operator/sessions") {
+    const body = await readJsonBody(request);
+    const prepared = prepareOperatorSession(body);
+    sendJson(response, 201, {
+      ...prepared,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "sessions" &&
+    segments[4] === "start"
+  ) {
+    const session = startOperatorSession(segments[3]);
+    sendJson(response, 200, {
+      session,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "sessions" &&
+    segments[4] === "prompt"
+  ) {
+    const body = await readJsonBody(request);
+    const session = recordOperatorPromptOutcome(segments[3], body);
+    sendJson(response, 200, {
+      session,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "operator" &&
+    segments[2] === "sessions" &&
+    segments[4] === "stop"
+  ) {
+    const body = await readJsonBody(request);
+    const session = stopOperatorSession(segments[3], body);
+    sendJson(response, 200, {
+      session,
       snapshot: getOperatorSnapshot()
     });
     return;

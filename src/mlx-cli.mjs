@@ -10,6 +10,14 @@ function usage() {
   npm run mlx -- profiles [search text]
   npm run mlx -- start <profile_id> [folder_id]
   npm run mlx -- stop <profile_id>
+  npm run mlx -- operator
+  npm run mlx -- plan <profile_id> [preset_id]
+  npm run mlx -- prepare <profile_id> [preset_id]
+  npm run mlx -- session-start <session_id>
+  npm run mlx -- session-done <session_id> [notes]
+  npm run mlx -- session-skip <session_id> [notes]
+  npm run mlx -- session-attention <session_id> [notes]
+  npm run mlx -- session-stop <session_id> [notes]
 
 Environment:
   TELEPHONES_BASE_URL=${activeBaseUrl}`);
@@ -84,6 +92,43 @@ async function resolveFolderId(profileId, folderId) {
   return { folderId: profile.folderId, profileType: "browser" };
 }
 
+async function resolveProfile(profileId) {
+  const fallback = {
+    id: profileId,
+    name: profileId,
+    profileType: "browser",
+    folderId: ""
+  };
+
+  try {
+    const result = await listProfiles("", { silent: true });
+    return result.profiles.find((profile) => profile.id === profileId) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function summarizeSession(session) {
+  return {
+    status: session.status,
+    profile: session.profileName,
+    preset: session.presetLabel,
+    prompt: session.currentPrompt?.label || "",
+    next: session.nextPromptAt || "",
+    id: session.id
+  };
+}
+
+function summarizeTask(task) {
+  return {
+    status: task.status,
+    function: task.functionLabel,
+    profile: task.profileName,
+    scheduled: task.scheduledFor || "",
+    id: task.id
+  };
+}
+
 async function main() {
   if (!command || command === "help" || command === "--help" || command === "-h") {
     usage();
@@ -140,6 +185,86 @@ async function main() {
     });
     console.log(`Stopped ${profileId}`);
     console.log(JSON.stringify(result.response.payload, null, 2));
+    return;
+  }
+
+  if (command === "operator") {
+    const result = await request("/api/operator");
+    console.log(
+      JSON.stringify(
+        {
+          dailyOverview: result.dailyOverview,
+          summary: result.summary,
+          persistence: result.persistence
+        },
+        null,
+        2
+      )
+    );
+    if (result.sessions.length) console.table(result.sessions.slice(0, 8).map(summarizeSession));
+    if (result.tasks.length) console.table(result.tasks.slice(0, 8).map(summarizeTask));
+    return;
+  }
+
+  if (command === "plan" || command === "prepare") {
+    const [profileId, presetId = "review_mode"] = args;
+    if (!profileId) throw new Error(`Pass a profile_id to ${command}.`);
+    const profile = await resolveProfile(profileId);
+    const result = await request(command === "plan" ? "/api/operator/plan" : "/api/operator/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        presetId,
+        profileId: profile.id,
+        profileName: profile.name,
+        profileType: profile.profileType || "browser",
+        folderId: profile.folderId || "",
+        targetUrl: "https://x.com/home"
+      })
+    });
+    if (command === "plan") {
+      console.log(result.startTaskAdded ? "Queued start plus random prompts." : "Queued one random prompt.");
+      console.table(result.tasks.map(summarizeTask));
+    } else {
+      console.log(`Prepared session ${result.session.id}`);
+      console.table([summarizeSession(result.session)]);
+    }
+    return;
+  }
+
+  if (command === "session-start") {
+    const [sessionId] = args;
+    if (!sessionId) throw new Error("Pass a session_id.");
+    const result = await request(`/api/operator/sessions/${encodeURIComponent(sessionId)}/start`, {
+      method: "POST",
+      body: "{}"
+    });
+    console.table([summarizeSession(result.session)]);
+    return;
+  }
+
+  if (["session-done", "session-skip", "session-attention"].includes(command)) {
+    const [sessionId, ...noteParts] = args;
+    if (!sessionId) throw new Error("Pass a session_id.");
+    const outcome = command === "session-done" ? "done" : command === "session-skip" ? "skipped" : "attention";
+    const result = await request(`/api/operator/sessions/${encodeURIComponent(sessionId)}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({
+        outcome,
+        notes: noteParts.join(" ")
+      })
+    });
+    console.table([summarizeSession(result.session)]);
+    return;
+  }
+
+  if (command === "session-stop") {
+    const [sessionId, ...noteParts] = args;
+    if (!sessionId) throw new Error("Pass a session_id.");
+    const result = await request(`/api/operator/sessions/${encodeURIComponent(sessionId)}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ notes: noteParts.join(" ") })
+    });
+    console.table([summarizeSession(result.session)]);
     return;
   }
 

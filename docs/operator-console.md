@@ -1,32 +1,48 @@
-# Operator Console
+# Profile Console And Operator Queue
 
-The Operator Console is the main work surface for local profile sessions.
+The Profile Console is the main work surface for local Multilogin sessions. It prepares a profile, tracks the session, and records manual prompts and outcomes.
 
 ## What It Does
 
 - Syncs real Multilogin browser profiles and mobile cloud-phone profiles.
-- Queues local tasks per profile.
+- Creates one persistent session per profile.
+- Queues one reusable `Start profile` task when a session is prepared.
 - Runs allowed Multilogin lifecycle controls: start and stop.
-- Tracks manual review tasks, notes, statuses, delays, and scheduled times.
+- Generates local prompts at randomized intervals from a selected preset.
+- Records prompt outcomes with `Done`, `Skip`, and `Needs attention`.
+- Keeps a per-session log and a daily overview.
 - Keeps completed and cancelled tasks out of the active task list.
+
+## Presets
+
+- `Review mode`: balanced prompts for scroll, open, save review, like review, repost review, and comment drafting.
+- `Light warmup`: mostly scroll/open prompts with slower timing.
+- `Comment drafting`: focused prompts for opening posts and drafting comments.
+- `No engagement`: observation-only scroll/open prompts.
+
+Preset prompts are local instructions. They do not click, scroll, like, repost, comment, save, or follow on X or any other third-party platform.
+
+## Main Flow
+
+1. Sync Multilogin profiles.
+2. Select a profile and preset in **Profile Console**.
+3. Click **Prepare Profile**.
+4. Click **Run Start** in **Profile Console**, run the queued `Start profile` task from **Operator Queue**, or open **Viewer** for mobile profiles when you need to watch the phone.
+5. Click **Start Session**.
+6. Handle the current prompt manually.
+7. Click **Done**, **Skip**, or **Needs attention**.
+
+After `Done` or `Skip`, the server schedules the next prompt with a random delay from the selected preset. `Needs attention` pauses the session until you start it again.
 
 ## Queue Task Behavior
 
-When the selected function is `Start profile`, the dashboard creates a short local plan:
+When the selected queue function is `Start profile`, the server creates a random local plan:
 
-1. Adds `Start profile` once for the selected profile.
-2. Adds 4-7 random follow-up tasks.
-3. Assigns each follow-up task a random delay between 10 and 230 seconds.
+1. Adds `Start profile` only if there is no reusable queued/running/recent start task for that profile.
+2. Adds random follow-up prompts from the selected preset.
+3. Assigns each follow-up task a random scheduled time.
 
-Random follow-up task types:
-
-- `Scroll prompt`
-- `Open post prompt`
-- `Like review prompt`
-- `Repost review prompt`
-- `Comment draft prompt`
-
-These are local prompts and records. They do not click, scroll, like, repost, comment, or save on X or any other third-party platform.
+If a start task already exists, the server adds one random follow-up prompt instead of adding another start task.
 
 ## Task Statuses
 
@@ -35,6 +51,29 @@ These are local prompts and records. They do not click, scroll, like, repost, co
 - `completed`: hidden from the active list.
 - `cancelled`: hidden from the active list.
 - `failed`: visible until rerun, completed, or cancelled.
+
+## Local Persistence
+
+Operator tasks and profile sessions are stored locally in:
+
+```txt
+data/operator-state.json
+```
+
+That file is ignored by git so local session history and profile details are not pushed to GitHub.
+
+## Terminal Control
+
+```bash
+npm run mlx -- operator
+npm run mlx -- plan <profile_id> review_mode
+npm run mlx -- prepare <profile_id> light_warmup
+npm run mlx -- session-start <session_id>
+npm run mlx -- session-done <session_id> "reviewed manually"
+npm run mlx -- session-skip <session_id>
+npm run mlx -- session-attention <session_id> "login needed"
+npm run mlx -- session-stop <session_id>
+```
 
 ## Mobile Cloud-Phone Controls
 

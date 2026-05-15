@@ -23,13 +23,16 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 ## What It Includes
 
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
-- Operator Console with agents, queued tasks, and task status tracking
-- Manual Action Runner with randomized prompts at 10-230 second intervals
-- Random operator plan generation: one start task, then 4-7 random local prompts
+- Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
+- Daily overview for profiles used today, active sessions, completed prompts, and attention items
+- Operator Queue with operators, queued tasks, and task status tracking
+- Server-side random prompt planning: one reusable start task, then random local prompts
+- Presets: Review mode, Light warmup, Comment drafting, and No engagement
 - Dashboard controls to start and stop Multilogin profiles
 - Mobile cloud-phone **Start Bg** uses Multilogin's background/proxy start path when available; **Viewer** opens the visible phone window when needed
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
+- Local operator state persisted to `data/operator-state.json` and ignored by git
 - Guarded Multilogin adapter for profile lifecycle and diagnostics
 - Importable Postman collection and environment
 - Project breakdown in `docs/project-plan.md`
@@ -40,11 +43,12 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 1. Start the app with `MULTILOGIN_ENABLED=true` and `MULTILOGIN_TOKEN`.
 2. Open the dashboard.
 3. Use **Sync Profiles** in the Multilogin panel.
-4. Use **Operator Console** to queue start, stop, manual X review, or note tasks.
-5. Use **Queue Task** with `Start profile` to create one start task plus random follow-up prompts.
-6. Use **Start Actions** for a randomized manual action cadence.
-7. Run the safe profile controls from the task queue or profile cards.
-8. Use terminal commands if you prefer CLI control.
+4. In **Profile Console**, select a profile and preset.
+5. Click **Prepare Profile** to create a persistent session and queue one reusable start task.
+6. Click **Run Start** in **Profile Console**, run the `Start profile` task from **Operator Queue**, or use **Viewer** for mobile profiles when you want to watch.
+7. Click **Start Session** to begin random local prompts.
+8. Use **Done**, **Skip**, or **Needs attention** to record outcomes and schedule the next prompt.
+9. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
 
@@ -71,6 +75,10 @@ npm run mlx -- status
 npm run mlx -- profiles
 npm run mlx -- start <profile_id>
 npm run mlx -- stop <profile_id>
+npm run mlx -- operator
+npm run mlx -- prepare <profile_id> review_mode
+npm run mlx -- session-start <session_id>
+npm run mlx -- session-done <session_id> "notes"
 ```
 
 If the dashboard is not on `http://localhost:5180` or `http://localhost:5177`, set `TELEPHONES_BASE_URL`.
