@@ -91,6 +91,8 @@ const operatorState = {
   tasks: []
 };
 
+const START_PROFILE_REUSE_STATUSES = new Set(["queued", "running", "completed"]);
+
 function iso() {
   return new Date().toISOString();
 }
@@ -142,6 +144,19 @@ export function createOperatorTask(payload = {}) {
 
   if (fn.id !== "note" && !trim(payload.profileId)) {
     throw new Error("Select a profile for this task.");
+  }
+
+  if (fn.id === "start_profile") {
+    const existingStartTask = operatorState.tasks.find(
+      (task) =>
+        task.profileId === trim(payload.profileId) &&
+        task.functionId === "start_profile" &&
+        START_PROFILE_REUSE_STATUSES.has(task.status)
+    );
+
+    if (existingStartTask) {
+      return existingStartTask;
+    }
   }
 
   const now = iso();

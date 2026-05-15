@@ -121,6 +121,7 @@ let actionRunner = {
   profileId: "",
   history: []
 };
+let queuePlanInFlight = false;
 let toastTimer = null;
 
 function escapeHtml(value) {
@@ -931,39 +932,47 @@ function hasStartTaskForProfile(profileId) {
 async function queueRandomPlan(profileId) {
   const profile = multiloginProfileById(profileId);
   if (!profile) throw new Error("Sync and select a profile first.");
+  if (queuePlanInFlight) return;
 
+  queuePlanInFlight = true;
   const queued = [];
-  if (!hasStartTaskForProfile(profile.id)) {
-    queued.push(
-      await queueOperatorTask({
-        functionId: "start_profile",
-        profileId: profile.id,
-        targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
-        notes: "Start once before the action plan.",
-        delaySec: 0,
-        silent: true
-      })
-    );
-  }
+  try {
+    const needsStartTask = !hasStartTaskForProfile(profile.id);
 
-  const planSize = randomInt(4, 7);
-  let cursorSec = randomInt(10, 230);
-  for (let index = 0; index < planSize; index += 1) {
-    const action = pickRandom(RANDOM_PLAN_FUNCTIONS);
-    queued.push(
-      await queueOperatorTask({
-        functionId: action.functionId,
-        profileId: profile.id,
-        targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
-        notes: action.notes,
-        delaySec: cursorSec,
-        silent: true
-      })
-    );
-    cursorSec += randomInt(10, 230);
-  }
+    if (needsStartTask) {
+      queued.push(
+        await queueOperatorTask({
+          functionId: "start_profile",
+          profileId: profile.id,
+          targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
+          notes: "Start once before the action plan.",
+          delaySec: 0,
+          silent: true
+        })
+      );
+    }
 
-  showToast(`Queued ${queued.length} task(s).`);
+    const actionCount = needsStartTask ? randomInt(4, 7) : 1;
+    let cursorSec = randomInt(10, 230);
+    for (let index = 0; index < actionCount; index += 1) {
+      const action = pickRandom(RANDOM_PLAN_FUNCTIONS);
+      queued.push(
+        await queueOperatorTask({
+          functionId: action.functionId,
+          profileId: profile.id,
+          targetUrl: nodes.operatorTargetUrl.value || "https://x.com/home",
+          notes: action.notes,
+          delaySec: cursorSec,
+          silent: true
+        })
+      );
+      cursorSec += randomInt(10, 230);
+    }
+
+    showToast(needsStartTask ? `Queued start plus ${queued.length - 1} random task(s).` : "Queued one random task.");
+  } finally {
+    queuePlanInFlight = false;
+  }
 }
 
 nodes.createAccountsForm.addEventListener("submit", async (event) => {
