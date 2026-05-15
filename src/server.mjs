@@ -560,7 +560,13 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "viewer") {
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "multilogin" &&
+    segments[2] === "profiles" &&
+    ["viewer", "launch"].includes(segments[4])
+  ) {
     const body = await readJsonBody(request);
     if (body.profileType !== "mobile") {
       throw new Error("Viewer is only available for mobile cloud phone profiles.");
@@ -571,7 +577,9 @@ async function handleApi(request, response, url) {
       profileType: "mobile",
       folderId: body.folderId,
       status: "running",
-      issue: "",
+      issue: result.response?.payload?.launchWarning
+        ? "Viewer requested, but Multilogin did not return a clean launch URL."
+        : "",
       lastOpenedAt: new Date().toISOString(),
       autoStopMinutes: 30
     });
@@ -583,7 +591,13 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "open-x") {
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "multilogin" &&
+    segments[2] === "profiles" &&
+    ["open-x", "openX", "x"].includes(segments[4])
+  ) {
     const body = await readJsonBody(request);
     if (body.profileType !== "mobile") {
       throw new Error("Open X is only available for mobile cloud phone profiles.");
@@ -599,7 +613,11 @@ async function handleApi(request, response, url) {
       profileType: "mobile",
       folderId: body.folderId,
       status: "running",
-      issue: result.response?.payload?.macroWarning || result.response?.payload?.installWarning || "",
+      issue:
+        result.response?.payload?.viewerWarning ||
+        result.response?.payload?.macroWarning ||
+        result.response?.payload?.installWarning ||
+        "",
       lastOpenedAt: new Date().toISOString(),
       autoStopMinutes: 30
     });
@@ -623,7 +641,13 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "stop") {
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "multilogin" &&
+    segments[2] === "profiles" &&
+    ["stop", "shutdown"].includes(segments[4])
+  ) {
     const body = await readJsonBody(request);
     const result =
       body.profileType === "mobile"

@@ -1329,7 +1329,13 @@ async function startProfileControl(profile, { message = "Started. Auto-stop in 3
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
   const warning = result.response?.payload?.startWarning || result.response?.payload?.viewerWarning;
-  showToast(result.uncertain ? "Start requested, but confirmation was unclear. Check the priority board." : warning ? message.replace("Started.", "Started with warning.") : message);
+  showToast(
+    result.uncertain
+      ? "Start requested; Multilogin confirmation was unclear. Check Priority Board."
+      : warning
+        ? message.replace("Started.", "Started with warning.")
+        : message
+  );
   return result;
 }
 
@@ -1345,7 +1351,8 @@ async function stopProfileControl(profile, { message = "Stopped Multilogin profi
   });
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
-  showToast(message);
+  const warnings = result.response?.payload?.warnings || [];
+  showToast(warnings.length ? "Stop requested with Multilogin warning. Check Priority Board." : message);
   return result;
 }
 
@@ -1611,7 +1618,8 @@ nodes.openSessionViewerButton.addEventListener("click", async () => {
     });
     if (result.snapshot) operatorState = result.snapshot;
     await loadMultiloginProfiles({ quiet: true });
-    showToast("Opened Multilogin viewer.");
+    const warning = result.response?.payload?.launchWarning;
+    showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
   } catch (error) {
     showToast(error.message);
   }
@@ -1633,8 +1641,8 @@ nodes.openSessionXButton.addEventListener("click", async () => {
     });
     if (result.snapshot) operatorState = result.snapshot;
     await loadMultiloginProfiles({ quiet: true });
-    const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-    showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
+    const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+    showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
   } catch (error) {
     showToast(error.message);
   }
@@ -1909,7 +1917,8 @@ document.addEventListener("click", async (event) => {
       });
       if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
-      showToast("Opened Multilogin viewer.");
+      const warning = result.response?.payload?.launchWarning;
+      showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
     } catch (error) {
       showToast(error.message);
     }
@@ -1929,8 +1938,8 @@ document.addEventListener("click", async (event) => {
       });
       if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
-      const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-      showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
+      const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+      showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
     } catch (error) {
       showToast(error.message);
     }
@@ -2073,7 +2082,7 @@ document.addEventListener("click", async (event) => {
       if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
       const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-      showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
+      showToast(warning ? "Open X requested with Multilogin warning. Check Priority Board." : "Opened phone and tapped X.");
     } catch (error) {
       showToast(error.message);
     }
@@ -2093,7 +2102,8 @@ document.addEventListener("click", async (event) => {
       });
       if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
-      showToast("Opened Multilogin viewer.");
+      const warning = result.response?.payload?.launchWarning;
+      showToast(warning ? "Viewer requested; Multilogin confirmation was unclear." : "Opened Multilogin viewer.");
     } catch (error) {
       showToast(error.message);
     }

@@ -387,6 +387,10 @@ async function runXcli(args, env = process.env) {
   }
 }
 
+function isSoftMobileCliError(error) {
+  return /unexpected response|failed to get profiles starting urls|starting urls/i.test(String(error?.message || error || ""));
+}
+
 function parseXcliBlocks(stdout) {
   return String(stdout)
     .split(/\n-{10,}\n/g)
@@ -620,9 +624,18 @@ export async function openMultiloginMobileViewer({ profileId } = {}, env = proce
     throw new Error("Opening a Multilogin mobile viewer requires profileId.");
   }
 
-  const stdout = await runXcli(["mobile-phone-launch", "--ids", String(profileId)], env);
+  let stdout = "";
+  let launchWarning = null;
+  try {
+    stdout = await runXcli(["mobile-phone-launch", "--ids", String(profileId)], env);
+  } catch (error) {
+    if (!isSoftMobileCliError(error)) throw error;
+    launchWarning = error.message;
+  }
+
   return {
     requestedAt: new Date().toISOString(),
+    uncertain: Boolean(launchWarning),
     request: {
       label: "Open mobile profile viewer",
       method: "xcli",
@@ -630,10 +643,15 @@ export async function openMultiloginMobileViewer({ profileId } = {}, env = proce
       path: "mobile-phone-launch"
     },
     response: {
-      ok: true,
-      httpStatus: 200,
-      statusText: "OK",
-      payload: { message: "Mobile profile viewer launch requested." }
+      ok: !launchWarning,
+      httpStatus: launchWarning ? 202 : 200,
+      statusText: launchWarning ? "Unconfirmed" : "OK",
+      payload: {
+        message: launchWarning
+          ? "Viewer launch was requested, but Multilogin did not return a clean launch URL."
+          : "Mobile profile viewer launch requested.",
+        launchWarning
+      }
     },
     output: stdout ? "ok" : "ok"
   };
@@ -722,6 +740,7 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
   const viewerResult = await openMultiloginMobileViewer({ profileId }, env);
   let macroResult = null;
   let macroWarning = null;
+  const viewerWarning = viewerResult.response?.payload?.launchWarning || null;
 
   if (runUiMacro) {
     await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_UI_MACRO_DELAY_MS || 1800)));
@@ -741,13 +760,14 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
       path: "mobile-phone-launch + scripts/open-mobile-x.swift"
     },
     response: {
-      ok: !macroWarning,
-      httpStatus: macroWarning ? 207 : 200,
-      statusText: macroWarning ? "Partial" : "OK",
+      ok: !macroWarning && !viewerWarning,
+      httpStatus: macroWarning || viewerWarning ? 207 : 200,
+      statusText: macroWarning || viewerWarning ? "Partial" : "OK",
       payload: {
-        message: macroWarning
-          ? "Viewer opened, but the local X opener macro did not complete."
+        message: macroWarning || viewerWarning
+          ? "Viewer/Open X was requested, but Multilogin did not return a clean confirmation."
           : "Viewer opened and X opener macro completed.",
+        viewerWarning,
         installWarning,
         macroWarning
       }
@@ -755,6 +775,7 @@ export async function openMultiloginMobileX({ profileId, groupId, ensureInstalle
     viewerResult,
     installResult,
     macroResult,
+    viewerWarning,
     installWarning,
     macroWarning
   };
@@ -765,22 +786,56 @@ export async function stopMultiloginMobileProfile({ profileId } = {}, env = proc
     throw new Error("Stopping a Multilogin mobile profile requires profileId.");
   }
 
-  const stdout = await runXcli(["mobile-phone-shutdown", "--ids", String(profileId)], env);
+  const attempts = [
+    {
+      path: "mobile-phone-shutdown",
+      args: ["mobile-phone-shutdown", "--ids", String(profileId)]
+    },
+    {
+      path: "mobile-profiles-phone-stop",
+      args: ["mobile-profiles-phone-stop", "--ids", String(profileId)]
+    }
+  ];
+  const results = [];
+  const warnings = [];
+
+  for (const attempt of attempts) {
+    try {
+      const stdout = await runXcli(attempt.args, env);
+      results.push({
+        path: attempt.path,
+        output: stdout ? "ok" : "ok"
+      });
+    } catch (error) {
+      warnings.push(`${attempt.path}: ${error.message}`);
+    }
+  }
+
+  if (!results.length) {
+    throw new Error(`Stopping mobile profile failed. ${warnings.join(" | ")}`);
+  }
+
   return {
     requestedAt: new Date().toISOString(),
     request: {
       label: "Stop mobile profile",
       method: "xcli",
       base: "local",
-      path: "mobile-phone-shutdown"
+      path: "mobile-phone-shutdown + mobile-profiles-phone-stop"
     },
     response: {
-      ok: true,
-      httpStatus: 200,
-      statusText: "OK",
-      payload: { message: "Mobile profile shutdown requested." }
+      ok: !warnings.length,
+      httpStatus: warnings.length ? 207 : 200,
+      statusText: warnings.length ? "Partial" : "OK",
+      payload: {
+        message: warnings.length
+          ? "Mobile stop was requested, but one Multilogin stop path returned a warning."
+          : "Mobile profile stop requested.",
+        warnings
+      }
     },
-    output: stdout ? "ok" : "ok"
+    results,
+    output: "ok"
   };
 }
 

@@ -100,10 +100,10 @@ npm run mlx -- session-stop <session_id>
 ## Mobile Cloud-Phone Controls
 
 - `Start 30m`: calls `xcli mobile-profiles-phone-start`, marks the profile running locally, and sets a 30-minute auto-stop timer. If Multilogin rejects background start, it automatically launches Viewer instead and keeps the same timer.
-- `Viewer`: calls `xcli mobile-phone-launch` and opens the visible cloud-phone window.
-- `Open X`: opens the visible cloud-phone window, presses Android Home, swipes to the app page, and taps the X icon using a local macOS UI macro.
+- `Viewer`: calls `xcli mobile-phone-launch` and opens the visible cloud-phone window. If Multilogin returns an unclear launch URL response, the profile is still tracked locally with a warning.
+- `Open X`: opens the visible cloud-phone window, presses Android Home, swipes to the app page, and taps the X icon using a local macOS UI macro. If launch confirmation is unclear, the dashboard keeps the profile on the Priority Board with a warning.
 - `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
-- `Stop`: calls `xcli mobile-phone-shutdown`.
+- `Stop`: calls both `xcli mobile-phone-shutdown` and `xcli mobile-profiles-phone-stop` because Multilogin separates visible phone shutdown from the mobile proxy-start path.
 
 Multilogin may reject the background start path with an internal server error for some profiles. In that case the dashboard falls back to `Viewer`, which is the documented cloud-phone launch path.
 
