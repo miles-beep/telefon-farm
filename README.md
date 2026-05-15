@@ -23,6 +23,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 ## What It Includes
 
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
+- Mobile cloud-phone sync and controls can use local `xcli` even when the cloud API token is missing
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually

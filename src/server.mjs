@@ -23,6 +23,7 @@ import {
 } from "./simulator.mjs";
 import {
   callMultiloginReadOnly,
+  getMultiloginMobileProfileStatuses,
   getMultiloginOverview,
   installMultiloginMobileXApp,
   openMultiloginMobileViewer,
@@ -47,6 +48,7 @@ import {
   getOperatorTask,
   markOperatorTaskRunning,
   recordOperatorPromptOutcome,
+  reconcileOperatorProfiles,
   startOperatorSession,
   stopOperatorSession,
   updateCommentDraft,
@@ -248,6 +250,19 @@ async function startMobileProfileWithFallback({ profileId } = {}) {
         }
       };
     }
+  }
+}
+
+async function verifyMobileProfileStatus(profileId) {
+  try {
+    const statusResult = await getMultiloginMobileProfileStatuses([profileId]);
+    return statusResult.statuses?.[profileId] || null;
+  } catch (error) {
+    return {
+      status: "",
+      rawStatus: "",
+      warning: error.message
+    };
   }
 }
 
@@ -515,6 +530,7 @@ async function handleApi(request, response, url) {
       limit: Number(url.searchParams.get("limit") || 50),
       offset: Number(url.searchParams.get("offset") || 0)
     });
+    reconcileOperatorProfiles(result.profiles || []);
     sendJson(response, 200, result);
     return;
   }
@@ -540,6 +556,7 @@ async function handleApi(request, response, url) {
             profileId: segments[3],
             folderId: body.folderId
           });
+    const verifiedStatus = body.profileType === "mobile" ? await verifyMobileProfileStatus(segments[3]) : null;
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
       profileType: body.profileType || "browser",
@@ -554,6 +571,7 @@ async function handleApi(request, response, url) {
     });
     sendJson(response, 200, {
       ...result,
+      verifiedStatus,
       record,
       snapshot: getOperatorSnapshot()
     });
@@ -572,6 +590,7 @@ async function handleApi(request, response, url) {
       throw new Error("Viewer is only available for mobile cloud phone profiles.");
     }
     const result = await openMultiloginMobileViewer({ profileId: segments[3] });
+    const verifiedStatus = await verifyMobileProfileStatus(segments[3]);
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
       profileType: "mobile",
@@ -585,6 +604,7 @@ async function handleApi(request, response, url) {
     });
     sendJson(response, 200, {
       ...result,
+      verifiedStatus,
       record,
       snapshot: getOperatorSnapshot()
     });
@@ -608,6 +628,7 @@ async function handleApi(request, response, url) {
       ensureInstalled: body.ensureInstalled === true,
       runUiMacro: body.runUiMacro !== false
     });
+    const verifiedStatus = await verifyMobileProfileStatus(segments[3]);
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
       profileType: "mobile",
@@ -623,6 +644,7 @@ async function handleApi(request, response, url) {
     });
     sendJson(response, 200, {
       ...result,
+      verifiedStatus,
       record,
       snapshot: getOperatorSnapshot()
     });
@@ -655,6 +677,7 @@ async function handleApi(request, response, url) {
         : await stopMultiloginProfile({
             profileId: segments[3]
           });
+    const verifiedStatus = body.profileType === "mobile" ? await verifyMobileProfileStatus(segments[3]) : null;
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
       profileType: body.profileType || "browser",
@@ -668,6 +691,7 @@ async function handleApi(request, response, url) {
     });
     sendJson(response, 200, {
       ...result,
+      verifiedStatus,
       record,
       snapshot: getOperatorSnapshot()
     });

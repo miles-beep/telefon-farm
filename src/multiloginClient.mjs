@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MOBILE_X_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
 const DEFAULT_X_APP_ID = "1556606452280463360";
+let localEnvLoaded = false;
 
 const READ_ONLY_OPERATIONS = {
   launcherVersion: {
@@ -134,6 +135,24 @@ function normalizeFilePath(value, fallback) {
   return raw;
 }
 
+function loadLocalEnv(env = process.env) {
+  if (localEnvLoaded) return;
+  localEnvLoaded = true;
+
+  const envPath = path.resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (Object.hasOwn(env, key)) continue;
+    env[key] = rawValue.trim().replace(/^['"]|['"]$/g, "");
+  }
+}
+
 function operationToPublicShape([id, operation]) {
   return {
     id,
@@ -146,14 +165,17 @@ function operationToPublicShape([id, operation]) {
 }
 
 export function getMultiloginConfig(env = process.env) {
+  loadLocalEnv(env);
   const xcliPath = normalizeFilePath(env.MULTILOGIN_XCLI_PATH, "~/mlx/deps/cli/xcli");
+  const hasXcli = existsSync(xcliPath);
+  const hasToken = Boolean(env.MULTILOGIN_TOKEN);
   return {
-    enabled: env.MULTILOGIN_ENABLED === "true",
-    hasToken: Boolean(env.MULTILOGIN_TOKEN),
+    enabled: env.MULTILOGIN_ENABLED === "true" || hasToken || hasXcli,
+    hasToken,
     cloudBaseUrl: normalizeBaseUrl(env.MULTILOGIN_CLOUD_BASE_URL, DEFAULT_CLOUD_BASE_URL),
     launcherBaseUrl: normalizeBaseUrl(env.MULTILOGIN_LAUNCHER_BASE_URL, DEFAULT_LAUNCHER_BASE_URL),
     xcliPath,
-    hasXcli: existsSync(xcliPath),
+    hasXcli,
     timeoutMs: Number(env.MULTILOGIN_TIMEOUT_MS || 8000)
   };
 }
@@ -240,6 +262,15 @@ function requireEnabled(config) {
 function requireToken(config) {
   if (!config.hasToken) {
     throw new Error("This Multilogin operation needs MULTILOGIN_TOKEN.");
+  }
+}
+
+function requireXcli(config) {
+  if (!config.enabled) {
+    throw new Error("Multilogin integration is disabled.");
+  }
+  if (!config.hasXcli) {
+    throw new Error(`Multilogin CLI was not found at ${config.xcliPath}.`);
   }
 }
 
@@ -368,11 +399,7 @@ function collectStatuses(value, output = new Map()) {
 
 async function runXcli(args, env = process.env) {
   const config = getMultiloginConfig(env);
-  requireEnabled(config);
-
-  if (!config.hasXcli) {
-    throw new Error(`Multilogin CLI was not found at ${config.xcliPath}.`);
-  }
+  requireXcli(config);
 
   try {
     const { stdout } = await execFileAsync(config.xcliPath, args, {
@@ -461,6 +488,19 @@ function mapMobileStatus(status) {
   return known[raw] || `status_${raw}`;
 }
 
+function extractMobileStatusMap(stdout) {
+  return Object.fromEntries(
+    parseXcliBlocks(stdout).map((fields) => [
+      fields.ID,
+      {
+        status: mapMobileStatus(fields.Status),
+        rawStatus: fields.Status || "",
+        name: fields.SerialName || fields.Name || fields.ID || ""
+      }
+    ])
+  );
+}
+
 function normalizeMobileProfile(fields) {
   return {
     id: fields.ID ?? "",
@@ -516,6 +556,38 @@ async function searchMultiloginMobileProfiles(options = {}, env = process.env) {
   };
 }
 
+export async function getMultiloginMobileProfileStatuses(profileIds = [], env = process.env) {
+  const ids = Array.isArray(profileIds) ? profileIds.filter(Boolean) : [profileIds].filter(Boolean);
+  if (!ids.length) {
+    return {
+      requestedAt: new Date().toISOString(),
+      request: {
+        label: "Mobile profile statuses",
+        method: "xcli",
+        base: "local",
+        path: "mobile-profiles-statuses"
+      },
+      statuses: {}
+    };
+  }
+
+  const args = ["mobile-profiles-statuses"];
+  ids.forEach((profileId) => args.push("--ids", String(profileId)));
+  const stdout = await runXcli(args, env);
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Mobile profile statuses",
+      method: "xcli",
+      base: "local",
+      path: "mobile-profiles-statuses"
+    },
+    statuses: extractMobileStatusMap(stdout),
+    output: stdout ? "ok" : "ok"
+  };
+}
+
 async function getWorkspaceFolders(env = process.env) {
   const result = await callMultiloginEndpoint(READ_ONLY_OPERATIONS.workspaceFolders, { env });
   assertOk(result.response, "Workspace folders");
@@ -558,13 +630,18 @@ export async function searchMultiloginProfiles(options = {}, env = process.env) 
   }
 
   const [profileResult, statusResult, folderResult, mobileResult] = await Promise.all([
-    callMultiloginEndpoint(CONTROL_OPERATIONS.profileSearch, { body, env }),
+    callMultiloginEndpoint(CONTROL_OPERATIONS.profileSearch, { body, env }).catch((error) => ({
+      error: error.message,
+      response: { payload: null },
+      profiles: [],
+      total: 0
+    })),
     getMultiloginProfileStatuses("", env).catch((error) => ({ error: error.message, statuses: {} })),
     getWorkspaceFolders(env).catch((error) => ({ error: error.message, folders: [] })),
     searchMultiloginMobileProfiles(options, env).catch((error) => ({ error: error.message, profiles: [], total: 0 }))
   ]);
 
-  assertOk(profileResult.response, "Profile search");
+  if (!profileResult.error) assertOk(profileResult.response, "Profile search");
 
   const statuses = statusResult.statuses ?? {};
   const folders = folderResult.folders ?? [];
@@ -581,6 +658,7 @@ export async function searchMultiloginProfiles(options = {}, env = process.env) 
     profiles,
     total: profileTotal(profileResult.response.payload, browserProfiles) + (mobileResult.total ?? mobileResult.profiles?.length ?? 0),
     folders,
+    profileWarning: profileResult.error || null,
     statusWarning: statusResult.error || null,
     folderWarning: folderResult.error || null,
     mobileWarning: mobileResult.error || null

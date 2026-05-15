@@ -323,6 +323,7 @@ function defaultProfileRecord(profileId) {
     lastOpenedAt: null,
     lastStoppedAt: null,
     lastPromptAt: null,
+    lastSeenAt: null,
     autoStopAt: null,
     completedPrompts: 0,
     skippedPrompts: 0,
@@ -384,6 +385,7 @@ function patchProfileRecord(profileId, patch = {}, { save = true } = {}) {
   if (Object.hasOwn(patch, "lastOpenedAt")) record.lastOpenedAt = patch.lastOpenedAt || null;
   if (Object.hasOwn(patch, "lastStoppedAt")) record.lastStoppedAt = patch.lastStoppedAt || null;
   if (Object.hasOwn(patch, "lastPromptAt")) record.lastPromptAt = patch.lastPromptAt || null;
+  if (Object.hasOwn(patch, "lastSeenAt")) record.lastSeenAt = patch.lastSeenAt || null;
   if (Object.hasOwn(patch, "cooldownUntil")) record.cooldownUntil = patch.cooldownUntil || null;
   if (Object.hasOwn(patch, "autoStopAt")) record.autoStopAt = patch.autoStopAt || null;
 
@@ -801,6 +803,42 @@ export function failOperatorTask(taskId, error) {
 
 export function updateOperatorProfileRecord(profileId, patch = {}) {
   return patchProfileRecord(profileId, patch);
+}
+
+export function reconcileOperatorProfiles(profiles = []) {
+  const now = iso();
+  const reconciled = [];
+
+  for (const profile of profiles) {
+    if (!profile?.id) continue;
+    const existing = ensureProfileRecord(profile.id, {
+      profileName: profile.name,
+      profileType: profile.profileType,
+      folderId: profile.folderId
+    });
+    const externalStatus = trim(profile.status);
+    const localActive = ["starting", "running", "prepared", "stopping"].includes(existing.status);
+    const shouldUseExternal =
+      externalStatus && !localActive && ["starting", "running", "stopping", "error"].includes(externalStatus);
+
+    reconciled.push(
+      patchProfileRecord(
+        profile.id,
+        {
+          profileName: profile.name,
+          profileType: profile.profileType,
+          folderId: profile.folderId,
+          status: shouldUseExternal ? (externalStatus === "error" ? "problem" : externalStatus) : existing.status || "ready",
+          issue: externalStatus === "error" ? "Multilogin reports profile error." : existing.issue,
+          lastSeenAt: now
+        },
+        { save: false }
+      )
+    );
+  }
+
+  savePersistedState();
+  return reconciled;
 }
 
 export function getProfilesDueForAutoStop(now = new Date()) {

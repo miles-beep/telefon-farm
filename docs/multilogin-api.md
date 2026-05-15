@@ -82,10 +82,13 @@ Example body:
 - Browser profile start: `GET /api/v2/profile/f/:folder_id/p/:profile_id/start`
 - Browser profile stop: `GET /api/v1/profile/stop/p/:profile_id`
 - Mobile cloud phone list: `xcli mobile-profiles-phone-list`
+- Mobile cloud phone statuses: `xcli mobile-profiles-statuses --ids <profile_id>`
 - Mobile cloud phone background start: `xcli mobile-profiles-phone-start --ids <profile_id>`
 - Mobile cloud phone stop: `xcli mobile-phone-shutdown --ids <profile_id>` and `xcli mobile-profiles-phone-stop --ids <profile_id>`
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
 - Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
+
+Mobile cloud-phone sync can still work without `MULTILOGIN_TOKEN` as long as local `xcli` is logged in and the Multilogin agent/launcher is running. Browser profile cloud API calls still require the token.
 
 ## Explicitly Not Implemented
 
