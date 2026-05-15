@@ -313,6 +313,10 @@ h2 {
   border-color: #bdc9cf;
 }
 
+.priority-panel {
+  border-color: #b8c8c2;
+}
+
 .session-panel {
   border-color: #b8c8c2;
 }
@@ -547,6 +551,71 @@ h2 {
 }
 
 .operator-task-meta span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.priority-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 10px;
+}
+
+.priority-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.priority-card.active {
+  border-color: #99c9ba;
+  background: #f3faf7;
+}
+
+.priority-card.attention {
+  border-color: #dfb8b1;
+  background: #fff7f5;
+}
+
+.priority-card header,
+.priority-card footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.priority-card header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.priority-card footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.priority-card footer button {
+  min-height: 34px;
+}
+
+.priority-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.priority-meta span {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #fff;

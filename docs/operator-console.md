@@ -40,6 +40,9 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 
 ## Workbench Controls
 
+- **Priority Board** is the first place to check. It shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
+- Priority Board cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.
+- Priority Board actions let you select a profile, start it, open X, open Viewer, queue a local task, or stop it.
 - **Open Next Ready Profile** selects the next profile in the Ready bucket, starts the local work session, and opens X for mobile profiles.
 - **Cooldown 1h** marks the selected profile as resting locally so it is skipped by the next-ready picker.
 - **Clear Issue** returns the selected profile to Ready.

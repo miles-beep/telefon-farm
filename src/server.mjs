@@ -206,20 +206,48 @@ async function startMobileProfileWithFallback({ profileId } = {}) {
   try {
     return await startMultiloginMobileProfile({ profileId });
   } catch (error) {
-    const viewerResult = await openMultiloginMobileViewer({ profileId });
-    return {
-      ...viewerResult,
-      fallback: true,
-      fallbackReason: error.message,
-      response: {
-        ...viewerResult.response,
-        payload: {
-          ...(viewerResult.response?.payload || {}),
-          message: "Background start failed; opened Viewer instead.",
-          startWarning: error.message
+    if (/disabled|not found/i.test(error.message)) throw error;
+    try {
+      const viewerResult = await openMultiloginMobileViewer({ profileId });
+      return {
+        ...viewerResult,
+        fallback: true,
+        fallbackReason: error.message,
+        response: {
+          ...viewerResult.response,
+          payload: {
+            ...(viewerResult.response?.payload || {}),
+            message: "Background start failed; opened Viewer instead.",
+            startWarning: error.message
+          }
         }
-      }
-    };
+      };
+    } catch (viewerError) {
+      if (/disabled|not found/i.test(viewerError.message)) throw viewerError;
+      return {
+        requestedAt: new Date().toISOString(),
+        fallback: true,
+        uncertain: true,
+        fallbackReason: error.message,
+        viewerError: viewerError.message,
+        request: {
+          label: "Start mobile profile with unconfirmed result",
+          method: "xcli",
+          base: "local",
+          path: "mobile-profiles-phone-start"
+        },
+        response: {
+          ok: false,
+          httpStatus: 202,
+          statusText: "Unconfirmed",
+          payload: {
+            message: "Start was requested, but Multilogin did not return a usable launch URL.",
+            startWarning: error.message,
+            viewerWarning: viewerError.message
+          }
+        }
+      };
+    }
   }
 }
 
@@ -493,6 +521,18 @@ async function handleApi(request, response, url) {
 
   if (method === "POST" && segments[0] === "api" && segments[1] === "multilogin" && segments[2] === "profiles" && segments[4] === "start") {
     const body = await readJsonBody(request);
+    const startedAt = new Date().toISOString();
+    if (body.profileType === "mobile") {
+      updateOperatorProfileRecord(segments[3], {
+        profileName: body.profileName,
+        profileType: "mobile",
+        folderId: body.folderId,
+        status: "starting",
+        issue: "Start requested; waiting for Multilogin confirmation.",
+        lastStartedAt: startedAt,
+        autoStopMinutes: 30
+      });
+    }
     const result =
       body.profileType === "mobile"
         ? await startMobileProfileWithFallback({ profileId: segments[3] })
@@ -505,8 +545,11 @@ async function handleApi(request, response, url) {
       profileType: body.profileType || "browser",
       folderId: body.folderId,
       status: "running",
-      issue: "",
-      lastStartedAt: new Date().toISOString(),
+      issue:
+        result.response?.payload?.startWarning || result.response?.payload?.viewerWarning
+          ? "Started locally, but Multilogin did not return a clean confirmation."
+          : "",
+      lastStartedAt: startedAt,
       autoStopMinutes: 30
     });
     sendJson(response, 200, {

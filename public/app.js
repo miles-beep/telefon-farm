@@ -18,6 +18,8 @@ const nodes = {
   multiloginProfileSearch: $("#multiloginProfileSearch"),
   multiloginProfilesButton: $("#multiloginProfilesButton"),
   multiloginProfileList: $("#multiloginProfileList"),
+  prioritySummary: $("#prioritySummary"),
+  priorityBoard: $("#priorityBoard"),
   operatorSummary: $("#operatorSummary"),
   operatorTaskForm: $("#operatorTaskForm"),
   operatorAgentSelect: $("#operatorAgentSelect"),
@@ -107,6 +109,21 @@ const PROFILE_BUCKETS = [
   { id: "setup", label: "Setup" },
   { id: "attention", label: "Attention" }
 ];
+const PRIORITY_ORDER = {
+  running: 0,
+  starting: 1,
+  stopping: 2,
+  needs_attention: 3,
+  problem: 4,
+  wrong_screen: 5,
+  stuck_play_store: 6,
+  phone_frozen: 7,
+  needs_login: 8,
+  x_missing: 9,
+  cooldown: 10,
+  prepared: 11,
+  ready: 12
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -654,6 +671,23 @@ function profileBucketId(profile) {
   return "ready";
 }
 
+function priorityProfiles() {
+  return [...multiloginProfilesState.profiles]
+    .map((profile) => ({
+      profile,
+      record: profileRecord(profile.id),
+      session: activeSessionForProfile(profile.id),
+      status: effectiveProfileStatus(profile)
+    }))
+    .sort((left, right) => {
+      const statusRank = (PRIORITY_ORDER[left.status] ?? 99) - (PRIORITY_ORDER[right.status] ?? 99);
+      if (statusRank) return statusRank;
+      const leftTime = new Date(left.record?.updatedAt || left.record?.lastStartedAt || left.profile.lastUsedAt || 0).getTime();
+      const rightTime = new Date(right.record?.updatedAt || right.record?.lastStartedAt || right.profile.lastUsedAt || 0).getTime();
+      return rightTime - leftTime;
+    });
+}
+
 function readyProfiles() {
   return multiloginProfilesState.profiles.filter((profile) => profileBucketId(profile) === "ready");
 }
@@ -908,6 +942,57 @@ function renderOperator() {
     .join("");
 }
 
+function renderPriorityBoard() {
+  if (!operatorState || !nodes.priorityBoard) return;
+  const rows = priorityProfiles();
+  const activeRows = rows.filter((row) => ["running", "starting", "stopping", "prepared"].includes(row.status));
+  const attentionRows = rows.filter((row) =>
+    ["needs_attention", "problem", "wrong_screen", "stuck_play_store", "phone_frozen"].includes(row.status)
+  );
+  nodes.prioritySummary.textContent = `${activeRows.length} active, ${attentionRows.length} attention`;
+
+  if (!rows.length) {
+    nodes.priorityBoard.innerHTML = `<p class="empty">Sync Multilogin profiles to see the board.</p>`;
+    return;
+  }
+
+  nodes.priorityBoard.innerHTML = rows
+    .slice(0, 24)
+    .map(({ profile, record, session, status }) => {
+      const isMobile = profile.profileType === "mobile";
+      const statusLine = [
+        profile.status ? `Multilogin: ${profile.status}` : "",
+        record?.lastStartedAt ? `Started ${formatRelative(record.lastStartedAt)}` : "",
+        record?.autoStopAt && ["running", "starting", "prepared"].includes(status) ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
+        session?.currentPrompt ? `Prompt: ${session.currentPrompt.label}` : "",
+        record?.issue ? `Issue: ${record.issue}` : ""
+      ].filter(Boolean);
+      return `
+        <article class="priority-card ${escapeHtml(profileBucketId(profile))}">
+          <header>
+            <div>
+              <strong>${escapeHtml(profile.name || profile.id)}</strong>
+              <p>${escapeHtml(isMobile ? `Mobile | Serial ${profile.serialNumber || "unknown"}` : profile.folderName || profile.folderId || "Browser")}</p>
+            </div>
+            <span class="tag ${escapeHtml(status)}">${escapeHtml(status.replaceAll("_", " "))}</span>
+          </header>
+          <div class="priority-meta">
+            ${statusLine.length ? statusLine.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : `<span>Ready for assignment</span>`}
+          </div>
+          <footer>
+            <button class="secondary priority-select-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Select</button>
+            <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Start 30m</button>
+            ${isMobile ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}">Open X</button>` : ""}
+            ${isMobile ? `<button class="secondary priority-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}">Viewer</button>` : ""}
+            <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
+            <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Stop</button>
+          </footer>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderProfileBuckets() {
   if (!operatorState || !nodes.profileBuckets) return;
 
@@ -1084,6 +1169,7 @@ function render() {
   renderAgents();
   renderAccountsTable();
   renderOtpQueue();
+  renderPriorityBoard();
   renderSessionConsole();
   renderOperator();
   renderProfileBuckets();
@@ -1227,6 +1313,39 @@ async function startWorkForProfile(profile, { message = "Work session started." 
   render();
   await loadMultiloginProfiles({ quiet: true });
   if (message) showToast(message);
+  return result;
+}
+
+async function startProfileControl(profile, { message = "Started. Auto-stop in 30m." } = {}) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/start`, {
+    method: "POST",
+    body: JSON.stringify({
+      profileName: profile.name || "",
+      folderId: profile.folderId || "",
+      profileType: profile.profileType || "browser"
+    })
+  });
+  if (result.snapshot) operatorState = result.snapshot;
+  await loadMultiloginProfiles({ quiet: true });
+  const warning = result.response?.payload?.startWarning || result.response?.payload?.viewerWarning;
+  showToast(result.uncertain ? "Start requested, but confirmation was unclear. Check the priority board." : warning ? message.replace("Started.", "Started with warning.") : message);
+  return result;
+}
+
+async function stopProfileControl(profile, { message = "Stopped Multilogin profile." } = {}) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/stop`, {
+    method: "POST",
+    body: JSON.stringify({
+      profileName: profile.name || "",
+      profileType: profile.profileType || "browser",
+      folderId: profile.folderId || ""
+    })
+  });
+  if (result.snapshot) operatorState = result.snapshot;
+  await loadMultiloginProfiles({ quiet: true });
+  showToast(message);
   return result;
 }
 
@@ -1690,6 +1809,12 @@ document.addEventListener("click", async (event) => {
   const reviewStatusButton = event.target.closest(".review-status-item");
   const copyDraftButton = event.target.closest(".copy-comment-draft");
   const archiveDraftButton = event.target.closest(".archive-comment-draft");
+  const prioritySelectButton = event.target.closest(".priority-select-profile");
+  const priorityStartButton = event.target.closest(".priority-start-profile");
+  const priorityOpenXButton = event.target.closest(".priority-open-x");
+  const priorityViewerButton = event.target.closest(".priority-viewer");
+  const priorityQueueButton = event.target.closest(".priority-queue-review");
+  const priorityStopButton = event.target.closest(".priority-stop-profile");
   const operatorRunButton = event.target.closest(".operator-run-task");
   const operatorStatusButton = event.target.closest(".operator-task-status");
 
@@ -1765,17 +1890,7 @@ document.addEventListener("click", async (event) => {
   if (mlxStartButton) {
     const profile = multiloginProfileById(mlxStartButton.dataset.profileId);
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStartButton.dataset.profileId)}/start`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile?.name || "",
-          folderId: mlxStartButton.dataset.folderId,
-          profileType: mlxStartButton.dataset.profileType
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      showToast(result.fallback ? "Background start failed; Viewer opened. Auto-stop in 30m." : "Started. Auto-stop in 30m.");
+      await startProfileControl(profile);
     } catch (error) {
       showToast(error.message);
     }
@@ -1824,17 +1939,7 @@ document.addEventListener("click", async (event) => {
   if (mlxStopButton) {
     const profile = multiloginProfileById(mlxStopButton.dataset.profileId);
     try {
-      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(mlxStopButton.dataset.profileId)}/stop`, {
-        method: "POST",
-        body: JSON.stringify({
-          profileName: profile?.name || "",
-          profileType: mlxStopButton.dataset.profileType,
-          folderId: profile?.folderId || ""
-        })
-      });
-      if (result.snapshot) operatorState = result.snapshot;
-      await loadMultiloginProfiles({ quiet: true });
-      showToast("Stopped Multilogin profile.");
+      await stopProfileControl(profile);
     } catch (error) {
       showToast(error.message);
     }
@@ -1929,6 +2034,87 @@ document.addEventListener("click", async (event) => {
       operatorState = result.snapshot;
       render();
       showToast("Draft archived.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (prioritySelectButton) {
+    const profile = multiloginProfileById(prioritySelectButton.dataset.profileId);
+    if (profile) {
+      nodes.sessionProfileSelect.value = profile.id;
+      nodes.operatorProfileSelect.value = profile.id;
+      render();
+      showToast("Profile selected.");
+    }
+  }
+
+  if (priorityStartButton) {
+    try {
+      await startProfileControl(multiloginProfileById(priorityStartButton.dataset.profileId));
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (priorityOpenXButton) {
+    const profile = multiloginProfileById(priorityOpenXButton.dataset.profileId);
+    if (!profile) return;
+    try {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
+        method: "POST",
+        body: JSON.stringify({
+          profileName: profile.name || "",
+          profileType: profile.profileType,
+          folderId: profile.folderId,
+          runUiMacro: true
+        })
+      });
+      if (result.snapshot) operatorState = result.snapshot;
+      await loadMultiloginProfiles({ quiet: true });
+      const warning = result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
+      showToast(warning ? `Viewer opened. ${warning}` : "Opened phone and tapped X.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (priorityViewerButton) {
+    const profile = multiloginProfileById(priorityViewerButton.dataset.profileId);
+    if (!profile) return;
+    try {
+      const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/viewer`, {
+        method: "POST",
+        body: JSON.stringify({
+          profileName: profile.name || "",
+          profileType: profile.profileType,
+          folderId: profile.folderId
+        })
+      });
+      if (result.snapshot) operatorState = result.snapshot;
+      await loadMultiloginProfiles({ quiet: true });
+      showToast("Opened Multilogin viewer.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (priorityQueueButton) {
+    try {
+      await queueOperatorTask({
+        functionId: "manual_x_review",
+        profileId: priorityQueueButton.dataset.profileId,
+        targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
+        notes: "Priority board task"
+      });
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (priorityStopButton) {
+    try {
+      await stopProfileControl(multiloginProfileById(priorityStopButton.dataset.profileId));
     } catch (error) {
       showToast(error.message);
     }

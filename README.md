@@ -26,6 +26,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
+- **Priority Board** for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
 - Local Review Queue and Comment Drafts panels for manual follow-up work

@@ -21,6 +21,7 @@ Build an easy local dashboard for monitoring Multilogin profiles. The dashboard 
    - Status, device, folder, and serial details
 
 2. **Profile Console**
+   - Priority Board for running/starting profiles, warnings, auto-stop timers, and quick task assignment
    - Persistent profile sessions
    - Presets for Review mode, Light warmup, Comment drafting, and No engagement
    - Start Work one-click flow for prepare/start/session-run
