@@ -32,6 +32,7 @@ const nodes = {
   sessionPresetSelect: $("#sessionPresetSelect"),
   sessionTargetUrl: $("#sessionTargetUrl"),
   sessionNotes: $("#sessionNotes"),
+  startWorkButton: $("#startWorkButton"),
   prepareSessionButton: $("#prepareSessionButton"),
   runSessionStartTaskButton: $("#runSessionStartTaskButton"),
   startSessionButton: $("#startSessionButton"),
@@ -141,6 +142,14 @@ function formatRelative(value) {
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   return `${Math.round(minutes / 60)}h ago`;
+}
+
+function formatDuration(ms) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
 }
 
 function shortId(value) {
@@ -629,15 +638,18 @@ function renderSessionConsole() {
   const session = selectedSession();
   const prompt = session?.currentPrompt || null;
   const startTask = session?.startTaskId ? operatorState.tasks.find((task) => task.id === session.startTaskId) : null;
+  const promptDue = prompt ? new Date(prompt.scheduledFor).getTime() <= Date.now() : false;
   const canPrepare = Boolean(profile?.id) && !activeSessionForProfile(profile.id);
   const canStart = Boolean(session && ["prepared", "needs_attention"].includes(session.status));
   const canStop = Boolean(session && session.status !== "stopped");
   const canRunStartTask = Boolean(startTask && ["queued", "failed"].includes(startTask.status));
-  const canRecordPrompt = Boolean(session && session.status === "running" && prompt);
+  const canRecordPrompt = Boolean(session && session.status === "running" && prompt && promptDue);
+  const canStartWork = Boolean(profile?.id) && (!session || ["prepared", "needs_attention"].includes(session.status));
 
   nodes.sessionSummary.textContent = session
     ? `${session.profileName} | ${session.status.replaceAll("_", " ")}`
     : "No active session";
+  nodes.startWorkButton.disabled = !canStartWork;
   nodes.prepareSessionButton.disabled = !canPrepare;
   nodes.runSessionStartTaskButton.disabled = !canRunStartTask;
   nodes.startSessionButton.disabled = !canStart;
@@ -675,14 +687,17 @@ function renderSessionConsole() {
 
   if (prompt) {
     const futureMs = new Date(prompt.scheduledFor).getTime() - Date.now();
-    const waitingText = futureMs > 1000 ? `Scheduled for ${formatTime(prompt.scheduledFor)}` : "Ready now";
+    const waitingText =
+      futureMs > 1000
+        ? `Next prompt in ${formatDuration(futureMs)} | scheduled for ${formatTime(prompt.scheduledFor)}`
+        : "Ready now";
     nodes.sessionPromptCard.innerHTML = `
       <header>
         <div>
           <strong>${escapeHtml(prompt.label)}</strong>
           <p>${escapeHtml(waitingText)}${prompt.delaySec ? ` | delay ${escapeHtml(prompt.delaySec)}s` : ""}</p>
         </div>
-        <span class="tag queued">${escapeHtml(session.status)}</span>
+        <span class="tag ${promptDue ? "running" : "queued"}">${escapeHtml(promptDue ? "due" : "waiting")}</span>
       </header>
       <p>${escapeHtml(prompt.detail)}</p>
       ${prompt.targetUrl ? `<div class="operator-task-meta"><span>${escapeHtml(prompt.targetUrl)}</span></div>` : ""}
@@ -951,6 +966,19 @@ async function queueOperatorTask({ functionId, profileId, targetUrl, notes, dela
   return task.task;
 }
 
+function sessionPayload(profile) {
+  return {
+    agentId: nodes.operatorAgentSelect.value,
+    presetId: nodes.sessionPresetSelect.value || "review_mode",
+    profileId: profile.id,
+    profileName: profile.name,
+    profileType: profile.profileType || "browser",
+    folderId: profile.folderId || "",
+    targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
+    notes: nodes.sessionNotes.value
+  };
+}
+
 async function queueRandomPlan(profileId) {
   const profile = multiloginProfileById(profileId);
   if (!profile) throw new Error("Sync and select a profile first.");
@@ -1068,6 +1096,29 @@ nodes.operatorProfileSelect.addEventListener("change", () => {
   renderSessionConsole();
 });
 
+nodes.startWorkButton.addEventListener("click", async () => {
+  const profile = selectedSessionProfile();
+  if (!profile) {
+    showToast("Sync and select a profile first.");
+    return;
+  }
+
+  try {
+    nodes.startWorkButton.disabled = true;
+    const result = await api("/api/operator/workflows/start", {
+      method: "POST",
+      body: JSON.stringify(sessionPayload(profile))
+    });
+    operatorState = result.snapshot;
+    render();
+    await loadMultiloginProfiles({ quiet: true });
+    showToast("Work session started.");
+  } catch (error) {
+    await refreshOperator().catch(() => {});
+    showToast(error.message);
+  }
+});
+
 nodes.prepareSessionButton.addEventListener("click", async () => {
   const profile = selectedSessionProfile();
   if (!profile) {
@@ -1078,16 +1129,7 @@ nodes.prepareSessionButton.addEventListener("click", async () => {
   try {
     const result = await api("/api/operator/sessions", {
       method: "POST",
-      body: JSON.stringify({
-        agentId: nodes.operatorAgentSelect.value,
-        presetId: nodes.sessionPresetSelect.value || "review_mode",
-        profileId: profile.id,
-        profileName: profile.name,
-        profileType: profile.profileType || "browser",
-        folderId: profile.folderId || "",
-        targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
-        notes: nodes.sessionNotes.value
-      })
+      body: JSON.stringify(sessionPayload(profile))
     });
     operatorState = result.snapshot;
     render();
@@ -1444,6 +1486,9 @@ loadState().then(() => {
   }
 });
 setInterval(() => loadState({ quiet: true }), 3000);
+setInterval(() => {
+  if (operatorState?.activeSession || selectedSession()) renderSessionConsole();
+}, 1000);
 setInterval(() => {
   if (multiloginProfilesState.lastLoadedAt) {
     loadMultiloginProfiles({ quiet: true });

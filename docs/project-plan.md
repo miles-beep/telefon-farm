@@ -23,6 +23,7 @@ Build an easy local dashboard for monitoring Multilogin profiles. The dashboard 
 2. **Profile Console**
    - Persistent profile sessions
    - Presets for Review mode, Light warmup, Comment drafting, and No engagement
+   - Start Work one-click flow for prepare/start/session-run
    - Daily overview for active sessions, completed prompts, and attention items
    - Safety notes before starting a session
    - Done/skip/needs-attention controls for the current prompt

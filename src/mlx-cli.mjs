@@ -11,6 +11,7 @@ function usage() {
   npm run mlx -- start <profile_id> [folder_id]
   npm run mlx -- stop <profile_id>
   npm run mlx -- operator
+  npm run mlx -- work <profile_id> [preset_id]
   npm run mlx -- plan <profile_id> [preset_id]
   npm run mlx -- prepare <profile_id> [preset_id]
   npm run mlx -- session-start <session_id>
@@ -206,11 +207,17 @@ async function main() {
     return;
   }
 
-  if (command === "plan" || command === "prepare") {
+  if (["work", "plan", "prepare"].includes(command)) {
     const [profileId, presetId = "review_mode"] = args;
     if (!profileId) throw new Error(`Pass a profile_id to ${command}.`);
     const profile = await resolveProfile(profileId);
-    const result = await request(command === "plan" ? "/api/operator/plan" : "/api/operator/sessions", {
+    const path =
+      command === "work"
+        ? "/api/operator/workflows/start"
+        : command === "plan"
+          ? "/api/operator/plan"
+          : "/api/operator/sessions";
+    const result = await request(path, {
       method: "POST",
       body: JSON.stringify({
         presetId,
@@ -224,6 +231,9 @@ async function main() {
     if (command === "plan") {
       console.log(result.startTaskAdded ? "Queued start plus random prompts." : "Queued one random prompt.");
       console.table(result.tasks.map(summarizeTask));
+    } else if (command === "work") {
+      console.log(`Started work session ${result.session.id}`);
+      console.table([summarizeSession(result.session)]);
     } else {
       console.log(`Prepared session ${result.session.id}`);
       console.table([summarizeSession(result.session)]);

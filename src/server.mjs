@@ -34,6 +34,7 @@ import {
 import {
   completeOperatorTask,
   createOperatorPlan,
+  getActiveOperatorSessionForProfile,
   prepareOperatorSession,
   createOperatorTask,
   failOperatorTask,
@@ -117,6 +118,30 @@ function contentTypeFor(filePath) {
   return "application/octet-stream";
 }
 
+async function executeOperatorTask(taskId) {
+  const task = markOperatorTaskRunning(taskId);
+  let result = null;
+
+  if (task.functionId === "start_profile") {
+    result =
+      task.profileType === "mobile"
+        ? await startMultiloginMobileProfile({ profileId: task.profileId })
+        : await startMultiloginProfile({ profileId: task.profileId, folderId: task.folderId });
+    completeOperatorTask(task.id, { message: "Profile start requested.", request: result.request });
+  } else if (task.functionId === "stop_profile") {
+    result =
+      task.profileType === "mobile"
+        ? await stopMultiloginMobileProfile({ profileId: task.profileId })
+        : await stopMultiloginProfile({ profileId: task.profileId });
+    completeOperatorTask(task.id, { message: "Profile stop requested.", request: result.request });
+  }
+
+  return {
+    task: getOperatorTask(task.id),
+    result
+  };
+}
+
 async function handleApi(request, response, url) {
   const segments = url.pathname.split("/").filter(Boolean);
   const method = request.method;
@@ -164,6 +189,45 @@ async function handleApi(request, response, url) {
     const prepared = prepareOperatorSession(body);
     sendJson(response, 201, {
       ...prepared,
+      snapshot: getOperatorSnapshot()
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/operator/workflows/start") {
+    const body = await readJsonBody(request);
+    let session = getActiveOperatorSessionForProfile(body.profileId);
+    let startTask = null;
+
+    if (!session) {
+      const prepared = prepareOperatorSession(body);
+      session = prepared.session;
+      startTask = prepared.startTask;
+    } else if (session.startTaskId) {
+      startTask = getOperatorTask(session.startTaskId);
+    }
+
+    let startResult = null;
+    if (startTask && ["queued", "failed"].includes(startTask.status)) {
+      try {
+        startResult = await executeOperatorTask(startTask.id);
+      } catch (error) {
+        const failedTask = failOperatorTask(startTask.id, error.message);
+        sendJson(response, 400, {
+          error: error.message,
+          session,
+          task: failedTask,
+          snapshot: getOperatorSnapshot()
+        });
+        return;
+      }
+    }
+
+    const startedSession = startOperatorSession(session.id);
+    sendJson(response, 200, {
+      session: startedSession,
+      startTask: startResult?.task || startTask,
+      startResult: startResult?.result || null,
       snapshot: getOperatorSnapshot()
     });
     return;
@@ -227,30 +291,19 @@ async function handleApi(request, response, url) {
   }
 
   if (method === "POST" && segments[0] === "api" && segments[1] === "operator" && segments[2] === "tasks" && segments[4] === "run") {
-    const task = markOperatorTaskRunning(segments[3]);
     try {
-      let result = null;
-      if (task.functionId === "start_profile") {
-        result =
-          task.profileType === "mobile"
-            ? await startMultiloginMobileProfile({ profileId: task.profileId })
-            : await startMultiloginProfile({ profileId: task.profileId, folderId: task.folderId });
-        completeOperatorTask(task.id, { message: "Profile start requested.", request: result.request });
-      } else if (task.functionId === "stop_profile") {
-        result =
-          task.profileType === "mobile"
-            ? await stopMultiloginMobileProfile({ profileId: task.profileId })
-            : await stopMultiloginProfile({ profileId: task.profileId });
-        completeOperatorTask(task.id, { message: "Profile stop requested.", request: result.request });
-      }
-
+      const { task, result } = await executeOperatorTask(segments[3]);
       sendJson(response, 200, {
-        task: getOperatorTask(task.id),
+        task,
         result,
         snapshot: getOperatorSnapshot()
       });
     } catch (error) {
-      const failedTask = failOperatorTask(task.id, error.message);
+      const existingTask = getOperatorTask(segments[3]);
+      const failedTask =
+        existingTask && !["completed", "cancelled"].includes(existingTask.status)
+          ? failOperatorTask(existingTask.id, error.message)
+          : existingTask;
       sendJson(response, 400, {
         error: error.message,
         task: failedTask,

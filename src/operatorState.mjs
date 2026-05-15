@@ -572,13 +572,18 @@ export function getOperatorSession(sessionId) {
   return operatorState.sessions.find((session) => session.id === sessionId);
 }
 
+export function getActiveOperatorSessionForProfile(profileId) {
+  const normalizedProfileId = trim(profileId);
+  return operatorState.sessions.find(
+    (session) => session.profileId === normalizedProfileId && ACTIVE_SESSION_STATUSES.has(session.status)
+  );
+}
+
 export function prepareOperatorSession(payload = {}) {
   const profile = taskPayloadForProfile(payload);
   if (!profile.profileId) throw new Error("Select a profile before preparing a session.");
 
-  const existing = operatorState.sessions.find(
-    (session) => session.profileId === profile.profileId && ACTIVE_SESSION_STATUSES.has(session.status)
-  );
+  const existing = getActiveOperatorSessionForProfile(profile.profileId);
   if (existing) {
     throw new Error("This profile already has an active session. Stop it before preparing another one.");
   }

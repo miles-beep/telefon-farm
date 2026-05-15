@@ -24,6 +24,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
+- **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - Daily overview for profiles used today, active sessions, completed prompts, and attention items
 - Operator Queue with operators, queued tasks, and task status tracking
 - Server-side random prompt planning: one reusable start task, then random local prompts
@@ -44,10 +45,10 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 2. Open the dashboard.
 3. Use **Sync Profiles** in the Multilogin panel.
 4. In **Profile Console**, select a profile and preset.
-5. Click **Prepare Profile** to create a persistent session and queue one reusable start task.
-6. Click **Run Start** in **Profile Console**, run the `Start profile` task from **Operator Queue**, or use **Viewer** for mobile profiles when you want to watch.
-7. Click **Start Session** to begin random local prompts.
-8. Use **Done**, **Skip**, or **Needs attention** to record outcomes and schedule the next prompt.
+5. Click **Start Work** to prepare the profile, run the start task, and begin the session runner.
+6. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
+7. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
+8. Use **Viewer** for mobile profiles when you want to watch the phone.
 9. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
@@ -76,6 +77,7 @@ npm run mlx -- profiles
 npm run mlx -- start <profile_id>
 npm run mlx -- stop <profile_id>
 npm run mlx -- operator
+npm run mlx -- work <profile_id> review_mode
 npm run mlx -- prepare <profile_id> review_mode
 npm run mlx -- session-start <session_id>
 npm run mlx -- session-done <session_id> "notes"

@@ -6,6 +6,7 @@ The Profile Console is the main work surface for local Multilogin sessions. It p
 
 - Syncs real Multilogin browser profiles and mobile cloud-phone profiles.
 - Creates one persistent session per profile.
+- Starts the main local workflow with one **Start Work** button.
 - Queues one reusable `Start profile` task when a session is prepared.
 - Runs allowed Multilogin lifecycle controls: start and stop.
 - Generates local prompts at randomized intervals from a selected preset.
@@ -26,11 +27,11 @@ Preset prompts are local instructions. They do not click, scroll, like, repost, 
 
 1. Sync Multilogin profiles.
 2. Select a profile and preset in **Profile Console**.
-3. Click **Prepare Profile**.
-4. Click **Run Start** in **Profile Console**, run the queued `Start profile` task from **Operator Queue**, or open **Viewer** for mobile profiles when you need to watch the phone.
-5. Click **Start Session**.
-6. Handle the current prompt manually.
-7. Click **Done**, **Skip**, or **Needs attention**.
+3. Click **Start Work**.
+4. Handle the current prompt manually when the timer releases it.
+5. Click **Done**, **Skip**, or **Needs attention**.
+
+Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each stage.
 
 After `Done` or `Skip`, the server schedules the next prompt with a random delay from the selected preset. `Needs attention` pauses the session until you start it again.
 
@@ -66,6 +67,7 @@ That file is ignored by git so local session history and profile details are not
 
 ```bash
 npm run mlx -- operator
+npm run mlx -- work <profile_id> review_mode
 npm run mlx -- plan <profile_id> review_mode
 npm run mlx -- prepare <profile_id> light_warmup
 npm run mlx -- session-start <session_id>
