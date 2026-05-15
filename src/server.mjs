@@ -185,7 +185,7 @@ async function executeOperatorTask(taskId) {
   if (task.functionId === "start_profile") {
     result =
       task.profileType === "mobile"
-        ? await startMultiloginMobileProfile({ profileId: task.profileId })
+        ? await startMobileProfileWithFallback({ profileId: task.profileId })
         : await startMultiloginProfile({ profileId: task.profileId, folderId: task.folderId });
     completeOperatorTask(task.id, { message: "Profile start requested.", request: result.request });
   } else if (task.functionId === "stop_profile") {
@@ -200,6 +200,27 @@ async function executeOperatorTask(taskId) {
     task: getOperatorTask(task.id),
     result
   };
+}
+
+async function startMobileProfileWithFallback({ profileId } = {}) {
+  try {
+    return await startMultiloginMobileProfile({ profileId });
+  } catch (error) {
+    const viewerResult = await openMultiloginMobileViewer({ profileId });
+    return {
+      ...viewerResult,
+      fallback: true,
+      fallbackReason: error.message,
+      response: {
+        ...viewerResult.response,
+        payload: {
+          ...(viewerResult.response?.payload || {}),
+          message: "Background start failed; opened Viewer instead.",
+          startWarning: error.message
+        }
+      }
+    };
+  }
 }
 
 async function handleApi(request, response, url) {
@@ -474,7 +495,7 @@ async function handleApi(request, response, url) {
     const body = await readJsonBody(request);
     const result =
       body.profileType === "mobile"
-        ? await startMultiloginMobileProfile({ profileId: segments[3] })
+        ? await startMobileProfileWithFallback({ profileId: segments[3] })
         : await startMultiloginProfile({
             profileId: segments[3],
             folderId: body.folderId

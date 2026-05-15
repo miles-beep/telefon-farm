@@ -35,6 +35,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Presets: Review mode, Light warmup, Comment drafting, and No engagement
 - Dashboard controls to start and stop Multilogin profiles
 - Mobile cloud-phone **Start 30m** uses Multilogin's background/proxy start path when available; **Viewer** opens the visible phone window when needed
+- If Multilogin rejects background start for a mobile profile, **Start 30m** automatically falls back to Viewer
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
 - Mobile cloud-phone **Open X** opens the viewer and runs a local macOS click macro to bring X forward
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group

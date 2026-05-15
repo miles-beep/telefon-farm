@@ -1775,7 +1775,7 @@ document.addEventListener("click", async (event) => {
       });
       if (result.snapshot) operatorState = result.snapshot;
       await loadMultiloginProfiles({ quiet: true });
-      showToast("Started. Auto-stop in 30m.");
+      showToast(result.fallback ? "Background start failed; Viewer opened. Auto-stop in 30m." : "Started. Auto-stop in 30m.");
     } catch (error) {
       showToast(error.message);
     }
