@@ -49,6 +49,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Importable Postman collection and environment
 - Project breakdown in `docs/project-plan.md`
 - Operator details in `docs/operator-console.md`
+- Local Multilogin Cloud Phones reference summaries in `api documentation/`
 
 ## Dashboard Flow
 
