@@ -75,6 +75,7 @@ const nodes = {
   commentDraftLabel: $("#commentDraftLabel"),
   commentDraftText: $("#commentDraftText"),
   commentDraftList: $("#commentDraftList"),
+  toggleAdvancedButton: $("#toggleAdvancedButton"),
   metricProfiles: $("#metricProfiles"),
   metricLoggedIn: $("#metricLoggedIn"),
   metricSaved: $("#metricSaved"),
@@ -100,6 +101,7 @@ let operatorState = null;
 let phoneControlState = null;
 let assistiveLastReport = null;
 let adbSetupText = "";
+let advancedToolsVisible = localStorage.getItem("telephones.advancedTools") === "true";
 let multiloginProfilesState = {
   profiles: [],
   total: 0,
@@ -210,6 +212,11 @@ function adbSerialForProfile(profileId) {
   if (mapped) return mapped;
   const devices = phoneControlState?.android?.connectedDevices || [];
   return devices.length === 1 ? devices[0] : "";
+}
+
+function looksLikeAdbSetup(text) {
+  const value = String(text || "").trim();
+  return /\badb\s+connect\s+\S+:\d{2,5}\b/i.test(value) || /\b[A-Za-z0-9.-]+:\d{2,5}\b/.test(value);
 }
 
 function selectedPhoneControlProfile() {
@@ -1697,6 +1704,13 @@ function render() {
   document.querySelectorAll(".demo-only").forEach((node) => {
     node.hidden = !appState.demoData;
   });
+  document.querySelectorAll(".advanced-panel").forEach((node) => {
+    node.hidden = !advancedToolsVisible;
+  });
+  if (nodes.toggleAdvancedButton) {
+    nodes.toggleAdvancedButton.textContent = advancedToolsVisible ? "Hide advanced" : "Advanced tools";
+    nodes.toggleAdvancedButton.setAttribute("aria-pressed", advancedToolsVisible ? "true" : "false");
+  }
   renderOptions();
   renderMetrics();
   renderProfiles();
@@ -1952,7 +1966,7 @@ async function openViewerControl(profile, { message = "Opened Multilogin viewer.
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
   const warning = result.response?.payload?.launchWarning;
-  showToast(warning ? "Viewer requested; Multilogin confirmation was unclear. Check Live Agent." : message);
+  showToast(warning ? "Phone viewer requested. If the phone window is visible, continue." : message);
   return result;
 }
 
@@ -2455,6 +2469,7 @@ document.addEventListener("click", async (event) => {
   const sessionButton = event.target.closest(".profile-session");
   const postButton = event.target.closest(".post-action");
   const agentButton = event.target.closest(".agent-status-action");
+  const toggleAdvancedButton = event.target.closest("#toggleAdvancedButton");
   const mlxStartButton = event.target.closest(".mlx-start-profile");
   const mlxOpenViewerButton = event.target.closest(".mlx-open-viewer");
   const mlxOpenXButton = event.target.closest(".mlx-open-x");
@@ -2554,6 +2569,13 @@ document.addEventListener("click", async (event) => {
     } catch (error) {
       showToast(error.message);
     }
+  }
+
+  if (toggleAdvancedButton) {
+    advancedToolsVisible = !advancedToolsVisible;
+    localStorage.setItem("telephones.advancedTools", advancedToolsVisible ? "true" : "false");
+    render();
+    showToast(advancedToolsVisible ? "Advanced tools shown." : "Advanced tools hidden.");
   }
 
   if (mlxStartButton) {
@@ -2951,6 +2973,10 @@ document.addEventListener("submit", async (event) => {
 
   const textArea = event.target.querySelector("#adbSetupText");
   adbSetupText = textArea?.value || "";
+  if (!looksLikeAdbSetup(adbSetupText)) {
+    showToast("Paste the ADB command from Multilogin's green Android icon, for example: adb connect IP:PORT.");
+    return;
+  }
 
   try {
     const result = await api("/api/multilogin/control-status/connect", {

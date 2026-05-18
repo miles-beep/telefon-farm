@@ -53,6 +53,7 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 - **Clear Issue** returns the selected profile to Ready.
 - Recovery buttons mark the selected profile with a local setup or attention state: login needed, X missing, stuck store, wrong screen, or frozen phone.
 - Profile buckets make it clear which profiles are ready, active, resting, waiting for setup, or blocked by an issue.
+- **Advanced tools** reveals the older profile console, operator queue, buckets, review queue, and draft list. It is hidden by default so the first screen stays focused on the active phone.
 
 ## Review Queue And Drafts
 

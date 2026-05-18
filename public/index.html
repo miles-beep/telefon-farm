@@ -12,7 +12,10 @@
         <p class="eyebrow">Local profile dashboard</p>
         <h1>Telephones Project</h1>
       </div>
-      <div class="status-pill" id="serverStatus">Connecting</div>
+      <div class="topbar-actions">
+        <button id="toggleAdvancedButton" class="secondary" type="button">Advanced tools</button>
+        <div class="status-pill" id="serverStatus">Connecting</div>
+      </div>
     </header>
 
     <main class="shell">
@@ -141,7 +144,7 @@
             <div id="priorityBoard" class="priority-board"></div>
           </section>
 
-          <section class="panel session-panel">
+          <section class="panel session-panel advanced-panel">
             <div class="panel-heading">
               <h2>Profile Console</h2>
               <span id="sessionSummary">No active session</span>
@@ -233,7 +236,7 @@
             </div>
           </section>
 
-          <section class="panel operator-panel">
+          <section class="panel operator-panel advanced-panel">
             <div class="panel-heading">
               <h2>Operator Queue</h2>
               <span id="operatorSummary">0 queued</span>
@@ -265,7 +268,7 @@
             <div id="operatorTaskList" class="operator-task-list"></div>
           </section>
 
-          <section class="panel">
+          <section class="panel advanced-panel">
             <div class="panel-heading">
               <h2>Profile Buckets</h2>
               <span id="profileBucketSummary">0 ready</span>
@@ -273,7 +276,7 @@
             <div id="profileBuckets" class="profile-buckets"></div>
           </section>
 
-          <section class="split-grid operator-tools">
+          <section class="split-grid operator-tools advanced-panel">
             <section class="panel">
               <div class="panel-heading">
                 <h2>Review Queue</h2>
@@ -313,7 +316,7 @@
             </section>
           </section>
 
-          <section class="panel">
+          <section class="panel advanced-panel">
             <div class="panel-heading">
               <h2>Profiles</h2>
               <span id="profileSummary">0 active</span>

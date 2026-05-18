@@ -141,6 +141,12 @@ h2 {
   background: #fff;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--accent);
@@ -160,6 +166,10 @@ h2 {
 
 .status-pill.online {
   color: var(--accent);
+}
+
+.advanced-panel[hidden] {
+  display: none !important;
 }
 
 .shell {
@@ -1625,6 +1635,11 @@ tbody tr:hover {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .post-actions {

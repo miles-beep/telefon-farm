@@ -35,6 +35,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Built-in phone-control setup: open the selected phone, paste the Multilogin ADB commands from clipboard, connect, verify, and test with a screenshot
 - **My Profiles** board for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
+- Advanced queues and legacy operator panels are hidden by default behind **Advanced tools** so the main screen stays focused
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
 - Local Review Queue and Comment Drafts panels for manual follow-up work
 - Daily overview for profiles used today, active sessions, completed prompts, and attention items
