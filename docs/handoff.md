@@ -1,13 +1,13 @@
 # Telephones Project Handoff
 
-Last updated: May 15, 2026
+Last updated: May 18, 2026
 
 ## Repo
 
 - Local path: `/Users/milchomazganov/work/telephones-project`
 - GitHub: `https://github.com/miles-beep/telefon-farm`
 - Branch: `main`
-- Latest pushed commit at handoff: `241ba5b Add visible live agent monitor`
+- Latest pushed commit at handoff: see `git log --oneline -1` on `main`.
 
 ## Current Goal
 
@@ -17,7 +17,7 @@ Build a local Multilogin dashboard for managing mobile cloud-phone profiles in a
 - Make profile state visible at the top through a Live Agent panel.
 - Open mobile phones visibly so behavior can be tested on screen.
 - Track active profiles, warnings, last reports, and 30-minute auto-stop timers.
-- Keep real website engagement actions manual. The dashboard can prompt and record, but should not secretly like, comment, repost, save, follow, or scroll on real platforms.
+- Keep real website engagement actions explicit and user-directed. The dashboard can open the phone, open X, scroll on command, help type prepared drafts, prompt, and record outcomes, but should not secretly like, comment, repost, save, follow, or run hidden/random engagement loops.
 
 ## How To Run
 
@@ -56,8 +56,6 @@ Do not commit real Multilogin tokens.
 
 ### Top Active Now Panel
 
-Added in commit `241ba5b`.
-
 Shows:
 
 - Active profiles
@@ -72,7 +70,15 @@ Shows:
 - Phone Control capability split:
   - Multilogin/xcli lifecycle controls: sync, start, viewer, stop, app install
   - Android inside-phone controls: Open X app, Scroll review, Scroll 3x through ADB
-- Assistive Controller for the selected profile: open viewer, open X, scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
+- Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
+- Phone Control includes an ADB setup form. Paste the commands Multilogin shows from the green Android icon:
+
+```txt
+adb connect IP:PORT
+adb -s IP:PORT shell glogin PASSWORD
+```
+
+The backend extracts only the address and optional `glogin` password and runs those known ADB commands. It does not execute arbitrary pasted shell text.
 
 Stopping a session from the overview marks the session stopped and cancels queued, running, and failed tasks for that session/profile. Stopping a Multilogin profile also closes active operator sessions for that profile and clears its queued work.
 
@@ -112,6 +118,8 @@ Important: Multilogin/xcli does not currently expose a documented command for la
 
 - `GET /api/multilogin`
 - `GET /api/multilogin/profiles`
+- `GET /api/multilogin/control-status`
+- `POST /api/multilogin/control-status/connect`
 - `GET /api/multilogin/mobile-statuses?ids=<id1,id2>`
 - `POST /api/multilogin/profiles/:id/start`
 - `POST /api/multilogin/profiles/:id/viewer`
@@ -122,15 +130,15 @@ Important: Multilogin/xcli does not currently expose a documented command for la
 - `POST /api/operator/tasks`
 - `POST /api/operator/workflows/start`
 
-Note: `/open-x` currently means "open the phone for manual X access" unless a caller explicitly passes `runUiMacro: true`. The dashboard passes `runUiMacro: false`.
+Note: `/open-x` launches the installed Android X app through ADB. It does not open an `x.com` browser URL.
 
 ## Files Changed Recently
 
 - `public/index.html`: added the Live Agent panel and Android app command controls.
 - `public/app.js`: Live Agent rendering, status polling, safer profile button data, visible mobile start flow, Open X app behavior.
 - `public/styles.css`: Live Agent layout and status styling.
-- `src/server.mjs`: visible mobile start behavior, mobile status sync endpoint, route hardening.
-- `src/multiloginClient.mjs`: soft mobile CLI errors, Android X app launch, and ADB-backed scroll commands.
+- `src/server.mjs`: visible mobile start behavior, mobile status sync endpoint, route hardening, and ADB setup route.
+- `src/multiloginClient.mjs`: soft mobile CLI errors, Android X app launch, ADB setup parsing, and ADB-backed scroll commands.
 - ADB command path: Android X app launch and feed scrolling run through Android device commands, not browser URLs.
 - `README.md`: updated current workflow.
 
@@ -163,10 +171,12 @@ Do not implement hidden engagement automation against X or other real social pla
 
 - Profile lifecycle controls
 - Visible phone launch
+- User-clicked X app launch
+- User-clicked scroll/back/home/tap/type helper commands
 - Manual prompts
 - Local reports and notes
 - Review queues
-- Comment drafts for manual use
+- Comment drafts and prepared text typing for manual use
 - Status polling and auto-stop
 
 Avoid:
@@ -176,22 +186,20 @@ Avoid:
 - Auto-repost
 - Auto-save
 - Auto-follow
-- Hidden scrolling or browsing that tries to evade platform detection
+- Hidden/random scrolling or browsing that tries to evade platform detection
 
 ## Next Useful Improvements
 
-1. Add a dashboard field/panel for per-profile ADB serial mapping.
-2. Add a clearer Live Agent event timeline with entries like "viewer requested", "Multilogin warning", "manual task queued", "stopped".
-3. Add a "Refresh status now" button in Live Agent.
-4. Add per-profile auto-stop countdown as an actual ticking timer, not only relative text refreshed by polling.
-5. Improve Multilogin warning classification:
+1. Add a clearer Live Agent event timeline with entries like "viewer requested", "Multilogin warning", "manual task queued", "stopped".
+2. Add a "Refresh status now" button in Live Agent.
+3. Add per-profile auto-stop countdown as an actual ticking timer, not only relative text refreshed by polling.
+4. Improve Multilogin warning classification:
    - `failed to get profiles starting urls`
    - `Internal server error`
    - `profile already starting/running`
    - `xcli missing`
-6. Add a "session done report" form directly in the Live Agent card.
-7. Add a small backend test script that checks all local routes without starting real profiles.
-8. Add a dedicated ADB connection panel so each active phone shows the exact Android device serial it is mapped to.
+5. Add a "session done report" form directly in the Live Agent card.
+6. Add a small backend test script that checks all local routes without starting real profiles.
 
 ## Last Verification
 

@@ -574,6 +574,37 @@ function encodeAndroidInputText(text) {
     .replace(/([&<>;|*~"'`()[\]{}$])/g, "\\$1");
 }
 
+function parseAdbSetupInput(payload = {}) {
+  const raw = [
+    payload.commandText,
+    payload.connectionCommand,
+    payload.authCommand,
+    payload.address,
+    payload.password ? `glogin ${payload.password}` : ""
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  const address =
+    String(payload.address || "").trim() ||
+    raw.match(/\badb\s+connect\s+([^\s]+)/i)?.[1] ||
+    raw.match(/\b([A-Za-z0-9.-]+:\d{2,5})\b/)?.[1] ||
+    "";
+  const authMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+glogin\s+([^\s]+)/i);
+  const serial = authMatch?.[1] || address;
+  const password = String(payload.password || "").trim() || authMatch?.[2] || raw.match(/\bglogin\s+([^\s]+)/i)?.[1] || "";
+
+  if (!address) {
+    throw new Error("Paste an ADB connect command or address from Multilogin, for example adb connect IP:PORT.");
+  }
+
+  return {
+    address,
+    serial,
+    password
+  };
+}
+
 async function swipeAndroidScreen({ profileId, adbSerial, direction = "down", count = 1 } = {}, env = process.env) {
   const size = await getAndroidScreenSize({ profileId, adbSerial }, env);
   const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
@@ -662,6 +693,25 @@ export async function getPhoneControlStatus(env = process.env) {
   }
 
   return status;
+}
+
+export async function connectAndroidPhoneControl(payload = {}, env = process.env) {
+  const setup = parseAdbSetupInput(payload);
+  const connectOutput = await runAdb(["connect", setup.address], env);
+  let authOutput = "";
+
+  if (setup.password) {
+    authOutput = await runAdb(["-s", setup.serial, "shell", "glogin", setup.password], env);
+  }
+
+  return {
+    requestedAt: new Date().toISOString(),
+    address: setup.address,
+    serial: setup.serial,
+    connectOutput,
+    authOutput,
+    status: await getPhoneControlStatus(env)
+  };
 }
 
 function isSoftMobileCliError(error) {

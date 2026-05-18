@@ -55,6 +55,7 @@ GET  /api/multilogin
 GET  /api/multilogin/control-status
 GET  /api/multilogin/profiles
 POST /api/multilogin/read-only
+POST /api/multilogin/control-status/connect
 POST /api/multilogin/profiles/:profileId/start
 POST /api/multilogin/profiles/:profileId/stop
 ```
@@ -92,6 +93,7 @@ Example body:
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
 - Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
 - Phone control status: checks Multilogin/xcli lifecycle capability and Android/ADB inside-phone capability separately
+- Phone control setup: `POST /api/multilogin/control-status/connect` parses the pasted Multilogin ADB setup commands and runs only `adb connect <address>` plus optional `adb -s <serial> shell glogin <password>`
 - Android X app launch: `adb shell monkey -p com.twitter.android -c android.intent.category.LAUNCHER 1`
 - Manual Android phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "open_x_app"`, `command: "scroll_prompt"`, or `command: "scroll_3"`
 - Assistive Android commands: the same command endpoint also accepts `screenshot`, `scroll_down`, `scroll_up`, `tap`, `type_text`, `key_back`, `key_home`, and `key_enter` when Android/ADB control is connected.

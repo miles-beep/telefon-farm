@@ -99,6 +99,7 @@ let multiloginState = null;
 let operatorState = null;
 let phoneControlState = null;
 let assistiveLastReport = null;
+let adbSetupText = "";
 let multiloginProfilesState = {
   profiles: [],
   total: 0,
@@ -178,6 +179,28 @@ function androidControlReason() {
 
 function androidButtonAttrs() {
   return canRunAndroidCommands() ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
+}
+
+function adbMappings() {
+  try {
+    return JSON.parse(localStorage.getItem("telephones.adbMappings") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setAdbMapping(profileId, serial) {
+  const mappings = adbMappings();
+  if (serial) mappings[profileId] = serial;
+  else delete mappings[profileId];
+  localStorage.setItem("telephones.adbMappings", JSON.stringify(mappings));
+}
+
+function adbSerialForProfile(profileId) {
+  const mapped = adbMappings()[profileId];
+  if (mapped) return mapped;
+  const devices = phoneControlState?.android?.connectedDevices || [];
+  return devices.length === 1 ? devices[0] : "";
 }
 
 function platformById(platformId) {
@@ -1139,6 +1162,7 @@ function renderPhoneControlPanel() {
   const adbDevices = phoneControlState.android?.connectedDevices || [];
   const adbDeviceText = adbDevices.length ? adbDevices.join(", ") : "No connected Android phone";
   const adbError = phoneControlState.android?.error || "";
+  const setupPlaceholder = `adb connect IP:PORT\nadb -s IP:PORT shell glogin PASSWORD`;
 
   nodes.phoneControlPanel.innerHTML = `
     <article class="phone-control-card ${multiloginReady ? "ready" : "blocked"}">
@@ -1165,6 +1189,16 @@ function renderPhoneControlPanel() {
     </article>
     <article class="phone-control-note">
       ${escapeHtml(phoneControlState.explanation || "Multilogin opens the phone. Android commands need a connected phone-control channel.")}
+      <form id="adbConnectForm" class="adb-connect-form">
+        <label>
+          Multilogin ADB commands
+          <textarea id="adbSetupText" rows="2" placeholder="${escapeHtml(setupPlaceholder)}">${escapeHtml(adbSetupText)}</textarea>
+        </label>
+        <div class="button-row inline">
+          <button type="submit">Connect ADB</button>
+          <button id="adbRefreshButton" class="secondary" type="button">Refresh</button>
+        </div>
+      </form>
     </article>
   `;
 }
@@ -1175,6 +1209,8 @@ function renderAssistiveController() {
   const profile = assistiveProfile();
   const androidReady = canRunAndroidCommands();
   const androidAttrs = androidReady ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
+  const devices = phoneControlState?.android?.connectedDevices || [];
+  const mappedSerial = profile ? adbSerialForProfile(profile.id) : "";
   const draftText = localStorage.getItem("telephones.assistiveDraft") || "";
   const report = assistiveLastReport;
 
@@ -1199,11 +1235,21 @@ function renderAssistiveController() {
         <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "phone control ready" : "viewer only"}</span>
       </header>
 
+      <div class="assistive-device-row">
+        <label>
+          Phone control device
+          <select class="assistive-adb-select" ${devices.length ? "" : "disabled"}>
+            <option value="">${devices.length ? "Auto / single device" : "No ADB device connected"}</option>
+            ${devices.map((device) => `<option value="${escapeHtml(device)}" ${device === mappedSerial ? "selected" : ""}>${escapeHtml(device)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+
       <div class="assistive-actions">
         <button class="assistive-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}">Open Viewer</button>
         <button class="secondary assistive-command" type="button" data-command="open_x_app" ${androidAttrs}>Open X</button>
-        <button class="secondary assistive-command" type="button" data-command="scroll_down" data-count="1" ${androidAttrs}>Scroll</button>
-        <button class="secondary assistive-command" type="button" data-command="scroll_down" data-count="3" ${androidAttrs}>Scroll 3x</button>
+        <button class="secondary assistive-command" type="button" data-command="scroll_prompt" data-count="1" ${androidAttrs}>Scroll</button>
+        <button class="secondary assistive-command" type="button" data-command="scroll_3" data-count="3" ${androidAttrs}>Scroll 3x</button>
         <button class="secondary assistive-command" type="button" data-command="screenshot" ${androidAttrs}>Screenshot</button>
         <button class="secondary assistive-command" type="button" data-command="key_back" ${androidAttrs}>Back</button>
         <button class="secondary assistive-command" type="button" data-command="key_home" ${androidAttrs}>Home</button>
@@ -1877,6 +1923,7 @@ async function runManualCommandControl(profile, command, options = {}) {
       profileName: profile.name || "",
       profileType: profile.profileType || "mobile",
       folderId: profile.folderId || "",
+      adbSerial: options.adbSerial || adbSerialForProfile(profile.id),
       command,
       ...options
     })
@@ -2365,6 +2412,7 @@ document.addEventListener("click", async (event) => {
   const sessionOverviewStopButton = event.target.closest(".session-overview-stop");
   const assistiveViewerButton = event.target.closest(".assistive-viewer");
   const assistiveCommandButton = event.target.closest(".assistive-command");
+  const adbRefreshButton = event.target.closest("#adbRefreshButton");
 
   if (verifyButton) {
     try {
@@ -2683,6 +2731,16 @@ document.addEventListener("click", async (event) => {
     }
   }
 
+  if (adbRefreshButton) {
+    try {
+      phoneControlState = await api("/api/multilogin/control-status");
+      render();
+      showToast(canRunAndroidCommands() ? "Phone control ready." : androidControlReason());
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
   if (operatorRunButton) {
     try {
       const result = await api(`/api/operator/tasks/${operatorRunButton.dataset.taskId}/run`, {
@@ -2738,6 +2796,42 @@ document.addEventListener("click", async (event) => {
     } catch (error) {
       showToast(error.message);
     }
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const assistiveAdbSelect = event.target.closest(".assistive-adb-select");
+  if (!assistiveAdbSelect) return;
+
+  const profile = assistiveProfile();
+  if (profile?.id) {
+    setAdbMapping(profile.id, assistiveAdbSelect.value);
+    render();
+    showToast(assistiveAdbSelect.value ? "ADB device mapped to this profile." : "ADB mapping cleared.");
+  }
+});
+
+document.addEventListener("input", (event) => {
+  if (event.target?.id === "adbSetupText") adbSetupText = event.target.value;
+});
+
+document.addEventListener("submit", async (event) => {
+  if (event.target?.id !== "adbConnectForm") return;
+  event.preventDefault();
+
+  const textArea = event.target.querySelector("#adbSetupText");
+  adbSetupText = textArea?.value || "";
+
+  try {
+    const result = await api("/api/multilogin/control-status/connect", {
+      method: "POST",
+      body: JSON.stringify({ commandText: adbSetupText })
+    });
+    phoneControlState = result.status;
+    render();
+    showToast(result.authOutput ? "ADB connected and authenticated." : "ADB connected. Run auth command if Multilogin requires it.");
+  } catch (error) {
+    showToast(error.message);
   }
 });
 

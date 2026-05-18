@@ -385,6 +385,17 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.adb-connect-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.adb-connect-form textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
 .assistive-controller {
   margin-bottom: 12px;
 }
@@ -442,6 +453,11 @@ h2 {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
+}
+
+.assistive-device-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px);
 }
 
 .assistive-actions button {
@@ -1545,6 +1561,7 @@ tbody tr:hover {
   }
 
   .assistive-actions,
+  .assistive-device-row,
   .assistive-draft-grid,
   .assistive-tap-grid {
     grid-template-columns: 1fr;

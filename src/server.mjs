@@ -23,6 +23,7 @@ import {
 } from "./simulator.mjs";
 import {
   callMultiloginReadOnly,
+  connectAndroidPhoneControl,
   getMultiloginMobileProfileStatuses,
   getMultiloginOverview,
   getPhoneControlStatus,
@@ -646,6 +647,13 @@ async function handleApi(request, response, url) {
 
   if (method === "GET" && url.pathname === "/api/multilogin/control-status") {
     const result = await getPhoneControlStatus();
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/multilogin/control-status/connect") {
+    const body = await readJsonBody(request);
+    const result = await connectAndroidPhoneControl(body);
     sendJson(response, 200, result);
     return;
   }

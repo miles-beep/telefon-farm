@@ -16,6 +16,8 @@ Open:
 http://localhost:5177
 ```
 
+If you run it with `PORT=5180`, open `http://localhost:5180/`.
+
 No package install is required because the app uses only built-in Node modules and static browser files.
 
 Create a local `.env` from `.env.example` if you want a repeatable environment setup. Do not commit real tokens.
@@ -29,7 +31,8 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
 - **Active Now** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
 - **Phone Control** status panel that separates Multilogin lifecycle controls from optional Android/ADB inside-phone controls
-- **Assistive Controller** for explicit accessibility commands on the selected phone: open viewer, open X, scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
+- **Assistive Controller** for explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
+- Built-in ADB setup form: paste the `adb connect ...` and `adb -s ... shell glogin ...` commands copied from Multilogin's green Android icon
 - **My Profiles** board for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
@@ -68,8 +71,9 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** to watch the phone. Use **Assistive Controller** commands after the **Phone Control** panel shows Android inside-phone controls are ready.
-12. Use terminal commands if you prefer CLI control.
+11. Use **Viewer** to watch the phone. In Multilogin's phone viewer, enable ADB from the green Android icon, copy the `adb connect ...` and `adb -s ... shell glogin ...` commands, then paste them into **Phone Control**.
+12. Use **Assistive Controller** commands after the **Phone Control** panel shows Android inside-phone controls are ready.
+13. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
 
@@ -88,7 +92,9 @@ MULTILOGIN_ENABLED=true MULTILOGIN_TOKEN="your_token" npm start
 ```
 
 See `docs/multilogin-api.md` for the implemented endpoint list and boundaries.
-Multilogin/xcli controls cloud-phone lifecycle: sync, start, viewer, stop, and app installation. It does not expose a documented API for pressing inside Android, launching one installed Android package, or swiping the app feed. Those inside-phone commands use Multilogin's ADB cloud-phone feature. Enable ADB on the running cloud phone and map it with `MULTILOGIN_ADB_SERIALS` if more than one device is connected.
+Multilogin/xcli controls cloud-phone lifecycle: sync, start, viewer, stop, and app installation. It does not expose a documented API for pressing inside Android, launching one installed Android package, or swiping the app feed. Those inside-phone commands use Multilogin's ADB cloud-phone feature. Start the phone, enable ADB in Multilogin, copy the connect/auth commands from the green Android icon, and paste them into the **Phone Control** panel.
+
+The dashboard includes a safe ADB setup form. It does not execute arbitrary terminal text. It only extracts a Multilogin cloud-phone address from `adb connect IP:PORT` and an optional `glogin` password from `adb -s IP:PORT shell glogin PASSWORD`, then runs those known ADB commands.
 
 ## Terminal Control
 
