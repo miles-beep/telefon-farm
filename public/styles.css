@@ -655,6 +655,19 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.manual-command {
+  display: inline-grid;
+  grid-template-columns: minmax(104px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 182px;
+}
+
+.manual-command select,
+.manual-command button {
+  min-height: 34px;
+}
+
 .priority-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));

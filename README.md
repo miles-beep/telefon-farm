@@ -40,6 +40,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Mobile cloud-phone **Start + View** opens the visible Multilogin phone window so the session can be tested directly
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
 - Mobile cloud-phone **Open Phone** opens the viewer without requesting macOS Accessibility control; tap X manually inside the phone
+- Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`
 - A local `osascript` click macro exists for opt-in terminal experiments only, but the dashboard does not request computer-control permissions
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`

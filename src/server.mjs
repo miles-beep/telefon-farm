@@ -214,6 +214,48 @@ async function startMobileProfileWithFallback({ profileId } = {}) {
   return openMultiloginMobileViewer({ profileId });
 }
 
+async function executeManualMobileCommand(profileId, body = {}) {
+  if (body.profileType !== "mobile") {
+    throw new Error("Manual phone commands are only available for mobile cloud phone profiles.");
+  }
+
+  const command = String(body.command || "scroll").trim();
+  let result = null;
+  let label = "";
+
+  if (command === "scroll" || command === "scroll_once") {
+    label = "Scroll";
+    result = await scrollMultiloginMobilePhone({ count: 1 });
+  } else if (command === "scroll_3") {
+    label = "Scroll 3x";
+    result = await scrollMultiloginMobilePhone({ count: 3 });
+  } else {
+    throw new Error(`Unsupported manual phone command: ${command}`);
+  }
+
+  const now = new Date().toISOString();
+  const message = result.response?.payload?.message || `${label} command completed.`;
+  const record = updateOperatorProfileRecord(profileId, {
+    profileName: body.profileName,
+    profileType: "mobile",
+    folderId: body.folderId,
+    status: "running",
+    issue: "",
+    lastCommandAt: now,
+    lastCommand: label,
+    lastCommandResult: message,
+    lastSeenAt: now,
+    autoStopMinutes: 30
+  });
+
+  return {
+    ...result,
+    command,
+    commandLabel: label,
+    record
+  };
+}
+
 function statusPatchForMobileStatus(status, fallback = {}) {
   const mappedStatus = status?.status || "";
   const patch = {
@@ -682,6 +724,22 @@ async function handleApi(request, response, url) {
       groupId: body.groupId || body.folderId
     });
     sendJson(response, 200, result);
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "multilogin" &&
+    segments[2] === "profiles" &&
+    ["command", "manual-command"].includes(segments[4])
+  ) {
+    const body = await readJsonBody(request);
+    const result = await executeManualMobileCommand(segments[3], body);
+    sendJson(response, 200, {
+      ...result,
+      snapshot: getOperatorSnapshot()
+    });
     return;
   }
 

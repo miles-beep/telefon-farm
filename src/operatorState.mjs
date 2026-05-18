@@ -323,6 +323,9 @@ function defaultProfileRecord(profileId) {
     lastOpenedAt: null,
     lastStoppedAt: null,
     lastPromptAt: null,
+    lastCommandAt: null,
+    lastCommand: "",
+    lastCommandResult: "",
     lastSeenAt: null,
     autoStopAt: null,
     completedPrompts: 0,
@@ -385,6 +388,9 @@ function patchProfileRecord(profileId, patch = {}, { save = true } = {}) {
   if (Object.hasOwn(patch, "lastOpenedAt")) record.lastOpenedAt = patch.lastOpenedAt || null;
   if (Object.hasOwn(patch, "lastStoppedAt")) record.lastStoppedAt = patch.lastStoppedAt || null;
   if (Object.hasOwn(patch, "lastPromptAt")) record.lastPromptAt = patch.lastPromptAt || null;
+  if (Object.hasOwn(patch, "lastCommandAt")) record.lastCommandAt = patch.lastCommandAt || null;
+  if (Object.hasOwn(patch, "lastCommand")) record.lastCommand = trim(patch.lastCommand);
+  if (Object.hasOwn(patch, "lastCommandResult")) record.lastCommandResult = trim(patch.lastCommandResult);
   if (Object.hasOwn(patch, "lastSeenAt")) record.lastSeenAt = patch.lastSeenAt || null;
   if (Object.hasOwn(patch, "cooldownUntil")) record.cooldownUntil = patch.cooldownUntil || null;
   if (Object.hasOwn(patch, "autoStopAt")) record.autoStopAt = patch.autoStopAt || null;

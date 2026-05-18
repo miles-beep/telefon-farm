@@ -87,6 +87,7 @@ Example body:
 - Mobile cloud phone stop: `xcli mobile-phone-shutdown --ids <profile_id>` and `xcli mobile-profiles-phone-stop --ids <profile_id>`
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
 - Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
+- Manual visible phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "scroll"` or `command: "scroll_3"`
 
 Mobile cloud-phone sync can still work without `MULTILOGIN_TOKEN` as long as local `xcli` is logged in and the Multilogin agent/launcher is running. Browser profile cloud API calls still require the token.
 

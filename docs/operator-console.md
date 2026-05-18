@@ -104,9 +104,10 @@ npm run mlx -- session-stop <session_id>
 - `Open X`: opens the visible cloud-phone window, presses Android Home, swipes to the app page, and taps the X icon using a local macOS UI macro. If launch confirmation is unclear, the dashboard keeps the profile on the Priority Board with a warning.
 - `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
 - `Stop`: calls both `xcli mobile-phone-shutdown` and `xcli mobile-profiles-phone-stop` because Multilogin separates visible phone shutdown from the mobile proxy-start path.
+- `Manual command`: runs one explicit visible phone command selected by the operator, such as `Scroll` or `Scroll 3x`, and records the result on the profile.
 
 Multilogin may reject the background start path with an internal server error for some profiles. In that case the dashboard falls back to `Viewer`, which is the documented cloud-phone launch path.
 
-The `Open X` macro requires macOS Accessibility permission for the terminal or app process that runs the dashboard. It does not like, comment, repost, save, follow, or scroll; it only performs the repetitive phone setup clicks.
+The optional local UI macros require macOS Accessibility permission for the terminal or app process that runs the dashboard. They do not like, comment, repost, save, or follow; the manual command runner only performs the command the operator selects.
 
 Started or opened profiles are tracked locally with `autoStopAt`. The server checks that field and requests a Multilogin stop when the 30-minute window expires.

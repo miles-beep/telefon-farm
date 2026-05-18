@@ -281,6 +281,7 @@ function renderMlxProfileCard(profile, compact = false) {
     ["running", "starting", "prepared"].includes(status) && record?.autoStopAt ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
     record?.cooldownUntil && isCooldownActive(record) ? `Cooldown until ${formatTime(record.cooldownUntil)}` : "",
     record?.lastPromptAt ? `Last prompt ${formatRelative(record.lastPromptAt)}` : "",
+    record?.lastCommandAt ? `${record.lastCommand || "Command"} ${formatRelative(record.lastCommandAt)}` : "",
     record?.completedPrompts ? `${record.completedPrompts} done` : ""
   ].filter(Boolean);
 
@@ -336,6 +337,7 @@ function renderMlxProfileCard(profile, compact = false) {
             data-profile-type="${escapeHtml(profile.profileType || "browser")}"
           >Stop</button>
           <button class="secondary queue-profile-review" data-profile-id="${escapeHtml(profile.id)}">Review</button>
+          ${renderManualCommandControls(profile)}
         </div>
       </footer>
     </article>
@@ -671,6 +673,26 @@ function profileFromButton(button) {
   };
 }
 
+function renderManualCommandControls(profile) {
+  if (profile?.profileType !== "mobile") return "";
+  return `
+    <div class="manual-command" data-profile-id="${escapeHtml(profile.id)}">
+      <select class="manual-command-select" aria-label="Manual phone command">
+        <option value="scroll">Scroll</option>
+        <option value="scroll_3">Scroll 3x</option>
+      </select>
+      <button
+        class="secondary manual-command-run"
+        type="button"
+        data-profile-id="${escapeHtml(profile.id)}"
+        data-profile-name="${escapeHtml(profile.name || "")}"
+        data-folder-id="${escapeHtml(profile.folderId)}"
+        data-profile-type="mobile"
+      >Run</button>
+    </div>
+  `;
+}
+
 function profileRecord(profileId) {
   return operatorState?.profileRecords?.[profileId] || null;
 }
@@ -994,6 +1016,7 @@ function renderPriorityBoard() {
         profile.status ? `Multilogin: ${profile.status}` : "",
         record?.lastStartedAt ? `Started ${formatRelative(record.lastStartedAt)}` : "",
         record?.autoStopAt && ["running", "starting", "prepared"].includes(status) ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
+        record?.lastCommandAt ? `${record.lastCommand || "Command"} ${formatRelative(record.lastCommandAt)}` : "",
         session?.currentPrompt ? `Prompt: ${session.currentPrompt.label}` : "",
         record?.issue ? `Issue: ${record.issue}` : ""
       ].filter(Boolean);
@@ -1024,6 +1047,7 @@ function renderPriorityBoard() {
             }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
             <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Stop</button>
+            ${renderManualCommandControls(profile)}
           </footer>
         </article>
       `;
@@ -1037,6 +1061,7 @@ function latestProfileReport(profileId) {
   const latestSession = (operatorState?.sessions || []).find((item) => item.profileId === profileId);
   const event = latestSession?.events?.[latestSession.events.length - 1] || null;
   if (event) return `${event.label || "Prompt"}: ${event.outcome || "recorded"} ${formatRelative(event.createdAt)}`;
+  if (record?.lastCommandAt) return `${record.lastCommandResult || record.lastCommand || "Command completed"} ${formatRelative(record.lastCommandAt)}`;
   if (record?.issue) return record.issue;
   if (record?.lastOpenedAt) return `Viewer opened ${formatRelative(record.lastOpenedAt)}`;
   if (record?.lastStartedAt) return `Started ${formatRelative(record.lastStartedAt)}`;
@@ -1072,6 +1097,7 @@ function renderLiveAgentBoard() {
         profile.status ? `Multilogin: ${profile.status}` : "",
         record?.lastSeenAt ? `Checked ${formatRelative(record.lastSeenAt)}` : "",
         record?.autoStopAt && ACTIVE_PROFILE_STATUSES.has(status) ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
+        record?.lastCommandAt ? `${record.lastCommand || "Command"} ${formatRelative(record.lastCommandAt)}` : "",
         session?.status ? `Session: ${session.status}` : "",
         record?.completedPrompts ? `${record.completedPrompts} done` : "",
         record?.skippedPrompts ? `${record.skippedPrompts} skipped` : "",
@@ -1103,6 +1129,7 @@ function renderLiveAgentBoard() {
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
             <button class="secondary live-mark-attention" type="button" data-profile-id="${escapeHtml(profile.id)}">Needs attention</button>
             <button class="secondary priority-stop-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Stop</button>
+            ${renderManualCommandControls(profile)}
           </footer>
         </article>
       `;
@@ -1538,6 +1565,25 @@ async function openXControl(profile, { message = "Opened phone. Tap X manually."
   await loadMultiloginProfiles({ quiet: true });
   const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
   showToast(warning ? "Phone opened with Multilogin warning. Check Live Agent." : message);
+  return result;
+}
+
+async function runManualCommandControl(profile, command) {
+  if (!profile?.id) throw new Error("Select a profile first.");
+  if (profile.profileType !== "mobile") throw new Error("Manual phone commands are only available for mobile profiles.");
+
+  const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/command`, {
+    method: "POST",
+    body: JSON.stringify({
+      profileName: profile.name || "",
+      profileType: profile.profileType || "mobile",
+      folderId: profile.folderId || "",
+      command
+    })
+  });
+  if (result.snapshot) operatorState = result.snapshot;
+  render();
+  showToast(result.response?.payload?.message || `${result.commandLabel || "Command"} completed.`);
   return result;
 }
 
@@ -2003,6 +2049,7 @@ document.addEventListener("click", async (event) => {
   const priorityQueueButton = event.target.closest(".priority-queue-review");
   const priorityStopButton = event.target.closest(".priority-stop-profile");
   const liveAttentionButton = event.target.closest(".live-mark-attention");
+  const manualCommandButton = event.target.closest(".manual-command-run");
   const operatorRunButton = event.target.closest(".operator-run-task");
   const operatorStatusButton = event.target.closest(".operator-task-status");
 
@@ -2274,6 +2321,19 @@ document.addEventListener("click", async (event) => {
       showToast("Marked for attention.");
     } catch (error) {
       showToast(error.message);
+    }
+  }
+
+  if (manualCommandButton) {
+    const runner = manualCommandButton.closest(".manual-command");
+    const select = runner?.querySelector(".manual-command-select");
+    try {
+      manualCommandButton.disabled = true;
+      await runManualCommandControl(profileFromButton(manualCommandButton), select?.value || "scroll");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      manualCommandButton.disabled = false;
     }
   }
 
