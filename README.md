@@ -26,14 +26,14 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
 - Mobile cloud-phone sync and controls can use local `xcli` even when the cloud API token is missing
+- Numbered **Start Here** workflow: choose phone, start/connect, then control X
+- **My Profiles** board is simplified by default and only selects which real phone the workflow controls
+- **Advanced tools** reveals the older profile console, operator queue, buckets, diagnostics, and raw phone-control panels when needed
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
-- **Start Work** one-click workflow: prepare profile, run start, and start the session runner
-- **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
-- **Active Now** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
-- **Phone Control** status panel that separates Multilogin lifecycle controls from optional Android/ADB inside-phone controls
-- **Assistive Controller** for explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
-- Built-in phone-control setup: open the selected phone, watch the Mac clipboard for Multilogin ADB commands, connect automatically, verify, and test with a screenshot
-- **My Profiles** board for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
+- **Start My X Session** opens the visible Multilogin phone, starts the automatic phone-control connector, and opens X automatically once ADB is connected
+- Built-in phone-control setup: watch the Mac clipboard for Multilogin ADB commands, connect automatically, verify, and test with a screenshot
+- Explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
+- Active status, warnings, auto-stop timers, and latest reports for the selected real phone
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Advanced queues and legacy operator panels are hidden by default behind **Advanced tools** so the main screen stays focused
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
@@ -63,19 +63,14 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 
 ## Dashboard Flow
 
-1. Start the app with `MULTILOGIN_ENABLED=true` and `MULTILOGIN_TOKEN`.
-2. Open the dashboard.
-3. Use **Sync Profiles** in the Multilogin panel.
-4. In **Profile Console**, select a profile and preset.
-5. Click **Start Work** to prepare the profile, run the start task, and begin the session runner.
-6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile, open the viewer, and foreground the Android X app when ADB is connected.
-7. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
-8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
-9. Add review URLs and reusable comment drafts locally so you can revisit them later.
-10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. In **Phone Control**, click **Open selected phone**. The dashboard starts auto-connect. In Multilogin, enable ADB and copy the green Android icon's ADB command; the local server watches the Mac clipboard and connects when it sees the command.
-12. Use **Assistive Controller** commands after the **Phone Control** panel shows Android inside-phone controls are ready.
-13. Use terminal commands if you prefer CLI control.
+1. Open the dashboard and use **Sync Profiles** if your phones are not listed.
+2. In **1. Start Here**, choose the phone you want to use.
+3. Click **Start My X Session**. The dashboard opens the visible Multilogin phone and starts watching the Mac clipboard.
+4. If phone control is not connected yet, enable ADB in Multilogin and copy the green Android icon's ADB command once.
+5. When the dashboard sees the ADB command, it connects automatically and opens the installed Android X app.
+6. Use **Open X**, **Scroll**, **Scroll 3x**, **Screenshot**, **Back**, **Home**, and **Stop** from the numbered workflow.
+7. Use **2. Your Phones** only to switch which phone the workflow controls.
+8. Use **Advanced tools** only when you need diagnostics, queues, raw ADB setup, or older operator panels.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
 
@@ -94,7 +89,7 @@ MULTILOGIN_ENABLED=true MULTILOGIN_TOKEN="your_token" npm start
 ```
 
 See `docs/multilogin-api.md` for the implemented endpoint list and boundaries.
-Multilogin/xcli controls cloud-phone lifecycle: sync, start, viewer, stop, and app installation. It does not expose a documented API for pressing inside Android, launching one installed Android package, or swiping the app feed. Those inside-phone commands use Multilogin's ADB cloud-phone feature. Start the phone, enable ADB in Multilogin, copy the connect/auth commands from the green Android icon, and paste them into the **Phone Control** panel.
+Multilogin/xcli controls cloud-phone lifecycle: sync, start, viewer, stop, and app installation. It does not expose a documented API for pressing inside Android, launching one installed Android package, or swiping the app feed. Those inside-phone commands use Multilogin's ADB cloud-phone feature. Start the phone, enable ADB in Multilogin, and copy the connect/auth commands from the green Android icon. The local server watches the Mac clipboard and connects when it sees those commands.
 
 The dashboard includes a safe ADB setup form. It does not execute arbitrary terminal text. It only extracts a Multilogin cloud-phone address from `adb connect IP:PORT` and an optional `glogin` password from `adb -s IP:PORT shell glogin PASSWORD`, then runs those known ADB commands.
 

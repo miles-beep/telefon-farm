@@ -28,11 +28,15 @@ Preset prompts are local instructions. They do not click, scroll, like, repost, 
 
 ## Main Flow
 
-1. Sync Multilogin profiles.
-2. Select a profile and preset in **Profile Console**.
-3. Click **Start Work**.
-4. Handle the current prompt manually when the timer releases it.
-5. Click **Done**, **Skip**, or **Needs attention**.
+The default dashboard is intentionally small and numbered.
+
+1. **Start Here / Choose phone**: pick the Multilogin cloud phone you want to control.
+2. **Start Here / Start and connect**: click **Start My X Session**. The dashboard opens the visible phone and starts watching the Mac clipboard for Multilogin ADB commands.
+3. If phone control is not ready, enable ADB in Multilogin and copy the green Android icon's ADB command once.
+4. **Start Here / Control X**: after phone control connects, use **Open X**, **Scroll**, **Scroll 3x**, **Screenshot**, **Back**, **Home**, or **Stop**.
+5. **Your Phones** only changes which phone the numbered workflow controls.
+
+Use **Advanced tools** only when you want the older Profile Console, raw Phone Control, Operator Queue, buckets, review queue, drafts, or diagnostics.
 
 Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each stage.
 
@@ -40,14 +44,14 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 
 ## Workbench Controls
 
-- **Active Now** is the first place to check. It shows current sessions, queued work, ready profiles, and attention profiles.
-- **Phone Control** shows which controls are available: Multilogin lifecycle controls through xcli/API, and optional Android inside-phone controls through ADB.
-- **Assistive Controller** is the accessibility work surface for the selected phone. It has large explicit commands for viewer, X app launch, X-aware scrolling, screenshots, Back/Home, tap point, and draft typing.
-- The **Phone Control** setup card opens the selected phone, watches the Mac clipboard for Multilogin ADB commands, verifies connected devices, and can test the control channel with a screenshot.
+- **Start Here** is the first place to check. It has numbered sections and small `?` tooltips that explain each section.
+- **Phone Control** is an advanced panel. It shows which controls are available: Multilogin lifecycle controls through xcli/API, and optional Android inside-phone controls through ADB.
+- **Assistive Controller** is an advanced accessibility work surface for the selected phone. It has explicit commands for viewer, X app launch, X-aware scrolling, screenshots, Back/Home, tap point, and draft typing.
+- The **Phone Control** setup card watches the Mac clipboard for Multilogin ADB commands, verifies connected devices, and can test the control channel with a screenshot.
 - The ADB setup form accepts the two commands Multilogin shows from the green Android icon: `adb connect IP:PORT` and, when required, `adb -s IP:PORT shell glogin PASSWORD`.
-- **My Profiles** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
-- My Profiles cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.
-- My Profiles actions let you select a profile, start it, open Viewer, queue a local task, stop it, and use Open X only when Android inside-phone controls are ready. Before that, the card shows **Setup control** and jumps to Phone Control.
+- **Your Phones** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
+- In the default view, Your Phones only has **Select this phone** so the page does not repeat controls.
+- When **Advanced tools** is open, profile cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, warnings, and direct action buttons.
 - **Open Next Ready Profile** selects the next profile in the Ready bucket, starts the local work session, and opens X for mobile profiles.
 - **Cooldown 1h** marks the selected profile as resting locally so it is skipped by the next-ready picker.
 - **Clear Issue** returns the selected profile to Ready.

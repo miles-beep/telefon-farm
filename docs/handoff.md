@@ -54,24 +54,24 @@ Do not commit real Multilogin tokens.
 
 ## Current UI Behavior
 
-### Top Active Now Panel
+### Top Start Here Panel
 
 Shows:
 
-- Active profiles
-- Active sessions and whether they are prepared/running/needs attention
-- Queued/running/failed work for the selected profile flow
-- Ready profiles and attention profiles in separate overview blocks
-- Multilogin mobile status check result
+- A numbered 3-step workflow:
+  - `1 Choose phone`: select one real Multilogin mobile profile.
+  - `2 Start and connect`: open the visible cloud phone and start the auto connector.
+  - `3 Control X`: open X, scroll, screenshot, Back/Home, or stop after phone control is ready.
+- Small `?` tooltips explaining the intention of each section.
 - Local running/starting/stopping state
 - Auto-stop countdown
 - Last report or warning
-- Quick controls: Viewer, Open X app, Task, Needs attention, Stop
-- Phone Control capability split:
+- The auto connector watches the Mac clipboard and connects when Multilogin copies the green Android icon ADB command.
+- Advanced-only Phone Control capability split:
   - Multilogin/xcli lifecycle controls: sync, start, viewer, stop, app install
   - Android inside-phone controls: Open X app, Scroll review, Scroll 3x through ADB
-- Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
-- Phone Control includes the guided setup card: open the selected phone, auto-connect from the Mac clipboard, connect and verify, refresh status, test screenshot, and open X after ADB is ready. Copy the commands Multilogin shows from the green Android icon:
+- Advanced-only Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
+- Copy the commands Multilogin shows from the green Android icon:
 
 ```txt
 adb connect IP:PORT
@@ -88,18 +88,16 @@ Live polling:
 - Backend calls `xcli mobile-profiles-statuses`
 - Polling runs every 5 seconds when profiles are synced
 
-### Priority Board
+### Your Phones Board
 
 Shows all synced profiles sorted by state priority:
 
 1. running
-2. starting
-3. stopping
-4. attention/problem states
-5. setup states
-6. cooldown
-7. prepared
-8. ready
+2. starting/stopping/prepared
+3. attention/setup/cooldown
+4. ready
+
+In the default view, each phone card only has **Select this phone**. Direct profile buttons such as Start + View, Viewer, Task, Stop, and manual command runners are hidden behind **Advanced tools**.
 
 ### Mobile Controls
 

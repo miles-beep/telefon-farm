@@ -59,6 +59,7 @@ const nodes = {
   dailyDone: $("#dailyDone"),
   dailyAttention: $("#dailyAttention"),
   liveAgentSummary: $("#liveAgentSummary"),
+  guidedWorkPanel: $("#guidedWorkPanel"),
   phoneControlPanel: $("#phoneControlPanel"),
   assistiveController: $("#assistiveController"),
   liveAgentBoard: $("#liveAgentBoard"),
@@ -104,6 +105,7 @@ let adbSetupText = "";
 let advancedToolsVisible = false;
 let phoneAutoConnectTimer = null;
 let phoneAutoConnectUntil = 0;
+let phoneAutoOpenXProfileId = "";
 let multiloginProfilesState = {
   profiles: [],
   total: 0,
@@ -151,6 +153,10 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function helpTip(text) {
+  return `<span class="help-tip" data-tip="${escapeHtml(text)}">?</span>`;
 }
 
 async function api(path, options = {}) {
@@ -225,11 +231,21 @@ function stopPhoneAutoConnect() {
   if (phoneAutoConnectTimer) clearInterval(phoneAutoConnectTimer);
   phoneAutoConnectTimer = null;
   phoneAutoConnectUntil = 0;
+  phoneAutoOpenXProfileId = "";
 }
 
 function selectedPhoneControlProfile() {
   const profile = assistiveProfile();
   return profile?.profileType === "mobile" ? profile : null;
+}
+
+function selectedGuidedProfile() {
+  const selected = selectedSessionProfile();
+  if (selected?.profileType === "mobile") return selected;
+  const activeSession = operatorState?.activeSession;
+  const activeProfile = activeSession?.profileId ? multiloginProfileById(activeSession.profileId) : null;
+  if (activeProfile?.profileType === "mobile") return activeProfile;
+  return priorityProfiles().find((row) => row.profile.profileType === "mobile")?.profile || null;
 }
 
 function platformById(platformId) {
@@ -1147,6 +1163,39 @@ function renderPriorityBoard() {
     return;
   }
 
+  if (!advancedToolsVisible) {
+    nodes.priorityBoard.innerHTML = rows
+      .slice(0, 6)
+      .map(({ profile, record, status }) => {
+        const selected = selectedGuidedProfile()?.id === profile.id;
+        const facts = [
+          profile.serialNumber ? `Serial ${profile.serialNumber}` : "",
+          record?.lastStartedAt ? `Started ${formatRelative(record.lastStartedAt)}` : "",
+          record?.autoStopAt && ["running", "starting", "prepared"].includes(status) ? `Auto-stop ${formatFuture(record.autoStopAt)}` : "",
+          record?.issue ? record.issue : ""
+        ].filter(Boolean);
+        return `
+          <article class="priority-card simple ${selected ? "selected" : ""}">
+            <header>
+              <div>
+                <strong>${escapeHtml(profile.name || profile.id)}</strong>
+                <p>${escapeHtml(profile.profileType === "mobile" ? "Mobile cloud phone" : "Browser profile")}</p>
+              </div>
+              <span class="tag ${escapeHtml(status)}">${escapeHtml(selected ? "selected" : status.replaceAll("_", " "))}</span>
+            </header>
+            <div class="priority-meta">
+              ${facts.length ? facts.map((item) => `<span>${escapeHtml(item)}</span>`).join("") : `<span>Ready</span>`}
+            </div>
+            <footer>
+              <button class="secondary priority-select-profile" type="button" data-profile-id="${escapeHtml(profile.id)}">Select this phone</button>
+            </footer>
+          </article>
+        `;
+      })
+      .join("");
+    return;
+  }
+
   nodes.priorityBoard.innerHTML = rows
     .slice(0, 24)
     .map(({ profile, record, session, status }) => {
@@ -1206,6 +1255,147 @@ function latestProfileReport(profileId) {
   if (record?.lastStartedAt) return `Started ${formatRelative(record.lastStartedAt)}`;
   if (session?.currentPrompt?.label) return `Current prompt: ${session.currentPrompt.label}`;
   return "No report yet.";
+}
+
+function renderGuidedWorkPanel() {
+  if (!nodes.guidedWorkPanel) return;
+
+  if (!operatorState || !multiloginState) {
+    nodes.guidedWorkPanel.innerHTML = `<p class="empty">Loading your profiles...</p>`;
+    return;
+  }
+
+  const mobileProfiles = priorityProfiles()
+    .filter((row) => row.profile.profileType === "mobile")
+    .map((row) => row.profile);
+  const selectedProfile = selectedGuidedProfile();
+  const selectedProfileId = selectedProfile?.id || "";
+  const record = selectedProfile ? profileRecord(selectedProfile.id) : null;
+  const status = selectedProfile ? effectiveProfileStatus(selectedProfile) : "";
+  const isRunning = ["running", "starting", "prepared"].includes(status);
+  const androidReady = Boolean(selectedProfile?.id && canRunAndroidCommandsForProfile(selectedProfile.id));
+  const autoConnecting = selectedProfile?.id === phoneAutoOpenXProfileId || phoneAutoConnectUntil > Date.now();
+  const multiloginReady = Boolean(multiloginState.config.enabled && (multiloginState.config.hasToken || multiloginState.config.hasXcli));
+  const profileOptions = mobileProfiles
+    .map(
+      (profile) =>
+        `<option value="${escapeHtml(profile.id)}" ${profile.id === selectedProfileId ? "selected" : ""}>${escapeHtml(
+          `${profile.name || profile.id}${profile.serialNumber ? ` | ${profile.serialNumber}` : ""}`
+        )}</option>`
+    )
+    .join("");
+
+  if (!multiloginReady) {
+    nodes.liveAgentSummary.textContent = "Multilogin is not enabled";
+    nodes.guidedWorkPanel.innerHTML = `
+      <article class="guided-card blocked">
+        <div>
+          <span class="guided-step">Setup needed</span>
+          <h3>Connect Multilogin first</h3>
+          <p>The dashboard needs the Multilogin token or local xcli before it can see your cloud phones.</p>
+        </div>
+        <button id="multiloginProfilesButtonProxy" class="secondary guided-sync" type="button">Sync Profiles</button>
+      </article>
+    `;
+    return;
+  }
+
+  if (!mobileProfiles.length) {
+    nodes.liveAgentSummary.textContent = "No synced mobile profiles";
+    nodes.guidedWorkPanel.innerHTML = `
+      <article class="guided-card">
+        <div>
+          <span class="guided-step">Step 1</span>
+          <h3>Sync your Multilogin phones</h3>
+          <p>This loads the two mobile profiles you want to control.</p>
+        </div>
+        <button class="guided-sync" type="button">Sync Profiles</button>
+      </article>
+    `;
+    return;
+  }
+
+  const statusText = androidReady
+    ? "Ready: X app and scroll controls can run from this page."
+    : isRunning
+      ? autoConnecting
+        ? "Waiting for Multilogin ADB details. When they appear on the Mac clipboard, X opens automatically."
+        : "Phone is open. Enable/copy ADB from Multilogin once, then this page will connect."
+      : "Ready to start. This opens the phone viewer and starts the automatic connector.";
+  const issueText = record?.issue ? `<p class="guided-warning">${escapeHtml(record.issue)}</p>` : "";
+  const lastReport = selectedProfile ? latestProfileReport(selectedProfile.id) : "No report yet.";
+  const startDisabled = selectedProfile ? "" : "disabled";
+  const androidDisabled = androidReady ? "" : "disabled";
+
+  nodes.liveAgentSummary.textContent = selectedProfile
+    ? `${selectedProfile.name || selectedProfile.id} | ${statusText}`
+    : "Choose a phone";
+
+  nodes.guidedWorkPanel.innerHTML = `
+    <article class="guided-card ${selectedProfile ? "ready" : ""}">
+      <header class="guided-card-header">
+        <span class="step-number">1</span>
+        <div>
+          <h3>Choose phone ${helpTip("Pick the Multilogin cloud phone you want to use right now. This does not start anything by itself.")}</h3>
+          <p>Select one of your real mobile profiles. The rest of the page will control this phone.</p>
+        </div>
+      </header>
+      <div class="guided-profile-row">
+        <label>
+          Phone
+          <select class="guided-profile-select">
+            ${profileOptions}
+          </select>
+        </label>
+        <span class="tag ${escapeHtml(status || "ready")}">${escapeHtml((status || "ready").replaceAll("_", " "))}</span>
+      </div>
+      <div class="guided-facts">
+        <span>Serial ${escapeHtml(selectedProfile?.serialNumber || "unknown")}</span>
+        ${record?.lastStartedAt ? `<span>Started ${escapeHtml(formatRelative(record.lastStartedAt))}</span>` : ""}
+        ${record?.autoStopAt && isRunning ? `<span>Auto-stop ${escapeHtml(formatFuture(record.autoStopAt))}</span>` : ""}
+        ${record?.issue ? `<span>${escapeHtml(record.issue)}</span>` : ""}
+      </div>
+    </article>
+
+    <article class="guided-card ${androidReady ? "ready" : isRunning ? "running" : ""}">
+      <header class="guided-card-header">
+        <span class="step-number">2</span>
+        <div>
+          <h3>Start and connect ${helpTip("Start My X Session opens the visible Multilogin phone and starts the automatic connector. If Multilogin asks for ADB, copy the green Android icon command once.")}</h3>
+          <p>${escapeHtml(statusText)}</p>
+        </div>
+      </header>
+      ${issueText}
+      <div class="guided-actions three">
+        <button class="guided-start-session" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Start My X Session</button>
+        <button class="secondary guided-viewer" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Open Viewer</button>
+        <button class="secondary guided-auto-connect" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>${autoConnecting ? "Watching..." : "Auto-connect"}</button>
+      </div>
+      <div class="guided-facts">
+        <span>${escapeHtml(androidReady ? "Phone control connected" : "Phone control not connected")}</span>
+        <span>${escapeHtml(autoConnecting ? "Watching Mac clipboard" : "Connector idle")}</span>
+      </div>
+    </article>
+
+    <article class="guided-card ${androidReady ? "ready" : "blocked"}">
+      <header class="guided-card-header">
+        <span class="step-number">3</span>
+        <div>
+          <h3>Control X ${helpTip("These buttons send explicit Android commands to your selected phone. Open X launches the installed X app. Scroll only swipes the visible feed.")}</h3>
+          <p>${escapeHtml(androidReady ? `Ready. Last report: ${lastReport}` : "Locked until phone control is connected. Use step 2 first.")}</p>
+        </div>
+      </header>
+      <div class="guided-actions control">
+        <button class="secondary guided-open-x" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Open X</button>
+        <button class="secondary guided-scroll" type="button" data-command="scroll_prompt" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Scroll</button>
+        <button class="secondary guided-scroll" type="button" data-command="scroll_3" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Scroll 3x</button>
+        <button class="secondary guided-screenshot" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Screenshot</button>
+        <button class="secondary guided-back" type="button" data-command="key_back" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Back</button>
+        <button class="secondary guided-home" type="button" data-command="key_home" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Home</button>
+        <button class="secondary guided-stop" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Stop</button>
+      </div>
+    </article>
+  `;
 }
 
 function renderPhoneControlPanel() {
@@ -1744,6 +1934,7 @@ function render() {
   renderAgents();
   renderAccountsTable();
   renderOtpQueue();
+  renderGuidedWorkPanel();
   renderPhoneControlPanel();
   renderAssistiveController();
   renderLiveAgentBoard();
@@ -1975,7 +2166,7 @@ async function startProfileControl(profile, { message = "Started. Auto-stop in 3
         : successMessage
   );
   if (profile.profileType === "mobile" && !canRunAndroidCommandsForProfile(profile.id)) {
-    startPhoneAutoConnect(profile);
+    startPhoneAutoConnect(profile, { openXOnReady: true });
   }
   return result;
 }
@@ -2040,22 +2231,26 @@ async function tryPhoneAutoConnect(profile, { quiet = false } = {}) {
   return false;
 }
 
-function startPhoneAutoConnect(profile) {
+function startPhoneAutoConnect(profile, { openXOnReady = false } = {}) {
   if (!profile?.id) throw new Error("Select a mobile profile first.");
   phoneAutoConnectUntil = Date.now() + 120000;
+  phoneAutoOpenXProfileId = openXOnReady ? profile.id : "";
   if (phoneAutoConnectTimer) clearInterval(phoneAutoConnectTimer);
   showToast("Watching Mac clipboard for Multilogin ADB command.");
-  renderPhoneControlPanel();
+  render();
 
   const tick = async () => {
     if (Date.now() > phoneAutoConnectUntil) {
       stopPhoneAutoConnect();
-      renderPhoneControlPanel();
+      render();
       showToast("Auto-connect timed out. Copy the ADB command from Multilogin and try again.");
       return;
     }
     try {
-      await tryPhoneAutoConnect(profile, { quiet: true });
+      const connected = await tryPhoneAutoConnect(profile, { quiet: true });
+      if (connected && openXOnReady) {
+        await openXControl(profile, { message: "Phone control connected. Opened X." });
+      }
     } catch (error) {
       if (!/clipboard|adb command|IP:PORT|Waiting/i.test(error.message)) showToast(error.message);
     }
@@ -2573,6 +2768,16 @@ document.addEventListener("click", async (event) => {
   const phoneControlOpenXButton = event.target.closest("#phoneControlOpenXButton");
   const adbPasteButton = event.target.closest("#adbPasteButton");
   const adbRefreshButton = event.target.closest("#adbRefreshButton");
+  const guidedSyncButton = event.target.closest(".guided-sync");
+  const guidedStartButton = event.target.closest(".guided-start-session");
+  const guidedViewerButton = event.target.closest(".guided-viewer");
+  const guidedAutoConnectButton = event.target.closest(".guided-auto-connect");
+  const guidedOpenXButton = event.target.closest(".guided-open-x");
+  const guidedScrollButton = event.target.closest(".guided-scroll");
+  const guidedScreenshotButton = event.target.closest(".guided-screenshot");
+  const guidedBackButton = event.target.closest(".guided-back");
+  const guidedHomeButton = event.target.closest(".guided-home");
+  const guidedStopButton = event.target.closest(".guided-stop");
 
   if (verifyButton) {
     try {
@@ -2647,6 +2852,102 @@ document.addEventListener("click", async (event) => {
     advancedToolsVisible = !advancedToolsVisible;
     render();
     showToast(advancedToolsVisible ? "Advanced tools shown." : "Advanced tools hidden.");
+  }
+
+  if (guidedSyncButton) {
+    try {
+      await loadMultiloginProfiles();
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (guidedStartButton) {
+    try {
+      const profile = multiloginProfileById(guidedStartButton.dataset.profileId) || selectedGuidedProfile();
+      selectProfileForPhoneControl(profile, { scroll: false });
+      await startProfileControl(profile, { message: "Started. Auto-connect is watching." });
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (guidedViewerButton) {
+    try {
+      const profile = multiloginProfileById(guidedViewerButton.dataset.profileId) || selectedGuidedProfile();
+      selectProfileForPhoneControl(profile, { scroll: false });
+      await openViewerControl(profile, { message: "Viewer opened." });
+      if (profile?.profileType === "mobile" && !canRunAndroidCommandsForProfile(profile.id)) {
+        startPhoneAutoConnect(profile, { openXOnReady: true });
+      }
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (guidedAutoConnectButton) {
+    try {
+      const profile = multiloginProfileById(guidedAutoConnectButton.dataset.profileId) || selectedGuidedProfile();
+      selectProfileForPhoneControl(profile, { scroll: false });
+      startPhoneAutoConnect(profile, { openXOnReady: true });
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (guidedOpenXButton) {
+    try {
+      const profile = multiloginProfileById(guidedOpenXButton.dataset.profileId) || selectedGuidedProfile();
+      await openXControl(profile);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (guidedScrollButton) {
+    try {
+      const profile = multiloginProfileById(guidedScrollButton.dataset.profileId) || selectedGuidedProfile();
+      guidedScrollButton.disabled = true;
+      await runManualCommandControl(profile, guidedScrollButton.dataset.command || "scroll_prompt");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedScrollButton.disabled = false;
+    }
+  }
+
+  if (guidedScreenshotButton) {
+    try {
+      const profile = multiloginProfileById(guidedScreenshotButton.dataset.profileId) || selectedGuidedProfile();
+      guidedScreenshotButton.disabled = true;
+      await runManualCommandControl(profile, "screenshot");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedScreenshotButton.disabled = false;
+    }
+  }
+
+  if (guidedBackButton || guidedHomeButton) {
+    const button = guidedBackButton || guidedHomeButton;
+    try {
+      const profile = multiloginProfileById(button.dataset.profileId) || selectedGuidedProfile();
+      button.disabled = true;
+      await runManualCommandControl(profile, button.dataset.command);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  if (guidedStopButton) {
+    try {
+      const profile = multiloginProfileById(guidedStopButton.dataset.profileId) || selectedGuidedProfile();
+      await stopProfileControl(profile);
+    } catch (error) {
+      showToast(error.message);
+    }
   }
 
   if (mlxStartButton) {
@@ -2887,7 +3188,7 @@ document.addEventListener("click", async (event) => {
     const profile = selectedPhoneControlProfile();
     try {
       await openViewerControl(profile, { message: "Selected phone opened." });
-      startPhoneAutoConnect(profile);
+      startPhoneAutoConnect(profile, { openXOnReady: true });
     } catch (error) {
       showToast(error.message);
     }
@@ -2895,7 +3196,7 @@ document.addEventListener("click", async (event) => {
 
   if (phoneAutoConnectButton) {
     try {
-      startPhoneAutoConnect(selectedPhoneControlProfile());
+      startPhoneAutoConnect(selectedPhoneControlProfile(), { openXOnReady: true });
     } catch (error) {
       showToast(error.message);
     }
@@ -3033,6 +3334,19 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", (event) => {
   const assistiveAdbSelect = event.target.closest(".assistive-adb-select");
+  const guidedProfileSelect = event.target.closest(".guided-profile-select");
+
+  if (guidedProfileSelect) {
+    const profile = multiloginProfileById(guidedProfileSelect.value);
+    if (profile?.id) {
+      if (nodes.sessionProfileSelect) nodes.sessionProfileSelect.value = profile.id;
+      if (nodes.operatorProfileSelect) nodes.operatorProfileSelect.value = profile.id;
+      render();
+      showToast("Phone selected.");
+    }
+    return;
+  }
+
   if (!assistiveAdbSelect) return;
 
   const profile = assistiveProfile();

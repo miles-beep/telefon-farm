@@ -19,7 +19,7 @@
     </header>
 
     <main class="shell">
-      <section class="metrics" aria-label="Overview metrics">
+      <section class="metrics advanced-panel" aria-label="Overview metrics" hidden>
         <article class="metric">
           <span>Profiles</span>
           <strong id="metricProfiles">0</strong>
@@ -40,17 +40,21 @@
 
       <section class="panel live-agent-panel" aria-label="Live agent monitor">
         <div class="panel-heading">
-          <h2>Active Now</h2>
+          <h2>
+            1. Start Here
+            <span class="help-tip" data-tip="Use this section first. Pick one of your phones, start the viewer, connect phone control, then use the X buttons.">?</span>
+          </h2>
           <span id="liveAgentSummary">No active profiles</span>
         </div>
-        <div id="phoneControlPanel" class="phone-control-panel"></div>
-        <div id="assistiveController" class="assistive-controller"></div>
-        <div id="liveAgentBoard" class="live-agent-board"></div>
-        <div id="sessionOverview" class="session-overview"></div>
+        <div id="guidedWorkPanel" class="guided-work-panel"></div>
+        <div id="phoneControlPanel" class="phone-control-panel advanced-panel" hidden></div>
+        <div id="assistiveController" class="assistive-controller advanced-panel" hidden></div>
+        <div id="liveAgentBoard" class="live-agent-board advanced-panel" hidden></div>
+        <div id="sessionOverview" class="session-overview advanced-panel" hidden></div>
       </section>
 
       <section class="workspace">
-        <aside class="control-column">
+        <aside class="control-column advanced-panel" hidden>
           <section class="panel demo-only">
             <div class="panel-heading">
               <h2>Create Profiles</h2>
@@ -138,7 +142,10 @@
         <section class="main-column">
           <section class="panel priority-panel">
             <div class="panel-heading">
-              <h2>My Profiles</h2>
+              <h2>
+                2. Your Phones
+                <span class="help-tip" data-tip="Use this only to choose which phone the Start Here panel controls. Advanced buttons are hidden unless Advanced tools is open.">?</span>
+              </h2>
               <span id="prioritySummary">0 running</span>
             </div>
             <div id="priorityBoard" class="priority-board"></div>
