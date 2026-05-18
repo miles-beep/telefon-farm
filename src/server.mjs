@@ -22,6 +22,7 @@ import {
   verifyAccount
 } from "./simulator.mjs";
 import {
+  autoConnectAndroidPhoneControl,
   callMultiloginReadOnly,
   connectAndroidPhoneControl,
   getMultiloginMobileProfileStatuses,
@@ -654,6 +655,13 @@ async function handleApi(request, response, url) {
   if (method === "POST" && url.pathname === "/api/multilogin/control-status/connect") {
     const body = await readJsonBody(request);
     const result = await connectAndroidPhoneControl(body);
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/multilogin/control-status/auto-connect") {
+    const body = await readJsonBody(request);
+    const result = await autoConnectAndroidPhoneControl(body);
     sendJson(response, 200, result);
     return;
   }

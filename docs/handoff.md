@@ -71,7 +71,7 @@ Shows:
   - Multilogin/xcli lifecycle controls: sync, start, viewer, stop, app install
   - Android inside-phone controls: Open X app, Scroll review, Scroll 3x through ADB
 - Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
-- Phone Control includes the guided setup card: open the selected phone, paste clipboard, connect and verify, refresh status, test screenshot, and open X after ADB is ready. Paste the commands Multilogin shows from the green Android icon:
+- Phone Control includes the guided setup card: open the selected phone, auto-connect from the Mac clipboard, connect and verify, refresh status, test screenshot, and open X after ADB is ready. Copy the commands Multilogin shows from the green Android icon:
 
 ```txt
 adb connect IP:PORT
@@ -120,6 +120,7 @@ Important: Multilogin/xcli does not currently expose a documented command for la
 - `GET /api/multilogin/profiles`
 - `GET /api/multilogin/control-status`
 - `POST /api/multilogin/control-status/connect`
+- `POST /api/multilogin/control-status/auto-connect`
 - `GET /api/multilogin/mobile-statuses?ids=<id1,id2>`
 - `POST /api/multilogin/profiles/:id/start`
 - `POST /api/multilogin/profiles/:id/viewer`

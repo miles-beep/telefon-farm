@@ -101,7 +101,9 @@ let operatorState = null;
 let phoneControlState = null;
 let assistiveLastReport = null;
 let adbSetupText = "";
-let advancedToolsVisible = localStorage.getItem("telephones.advancedTools") === "true";
+let advancedToolsVisible = false;
+let phoneAutoConnectTimer = null;
+let phoneAutoConnectUntil = 0;
 let multiloginProfilesState = {
   profiles: [],
   total: 0,
@@ -217,6 +219,12 @@ function adbSerialForProfile(profileId) {
 function looksLikeAdbSetup(text) {
   const value = String(text || "").trim();
   return /\badb\s+connect\s+\S+:\d{2,5}\b/i.test(value) || /\b[A-Za-z0-9.-]+:\d{2,5}\b/.test(value);
+}
+
+function stopPhoneAutoConnect() {
+  if (phoneAutoConnectTimer) clearInterval(phoneAutoConnectTimer);
+  phoneAutoConnectTimer = null;
+  phoneAutoConnectUntil = 0;
 }
 
 function selectedPhoneControlProfile() {
@@ -1218,6 +1226,7 @@ function renderPhoneControlPanel() {
   const setupDisabled = profile ? "" : "disabled";
   const profileAndroidReady = Boolean(profile?.id && canRunAndroidCommandsForProfile(profile.id));
   const androidDisabled = profileAndroidReady ? "" : "disabled";
+  const autoConnecting = phoneAutoConnectUntil > Date.now();
 
   nodes.phoneControlPanel.innerHTML = `
     <article class="phone-control-card ${multiloginReady ? "ready" : "blocked"}">
@@ -1244,21 +1253,36 @@ function renderPhoneControlPanel() {
 
       <div class="phone-control-actions">
         <button class="phone-control-viewer" type="button" ${setupDisabled}>Open selected phone</button>
-        <button id="adbPasteButton" class="secondary" type="button">Paste clipboard</button>
+        <button id="phoneAutoConnectButton" class="secondary" type="button" ${setupDisabled}>${autoConnecting ? "Watching clipboard..." : "Auto-connect"}</button>
         <button id="adbRefreshButton" class="secondary" type="button">Refresh status</button>
       </div>
 
-      <form id="adbConnectForm" class="adb-connect-form">
-        <label>
-          Multilogin ADB commands
-          <textarea id="adbSetupText" rows="2" placeholder="${escapeHtml(setupPlaceholder)}">${escapeHtml(adbSetupText)}</textarea>
-        </label>
-        <div class="button-row inline">
-          <button type="submit">Connect + verify</button>
-          <button id="phoneControlTestButton" class="secondary" type="button" ${androidDisabled}>Test screenshot</button>
-          <button id="phoneControlOpenXButton" class="secondary" type="button" ${androidDisabled}>Open X app</button>
-        </div>
-      </form>
+      <p class="phone-control-hint">${escapeHtml(
+        profileAndroidReady
+          ? "Phone control is ready. Use Open X app, Scroll, Screenshot, or Type Draft below."
+          : autoConnecting
+            ? "Watching the Mac clipboard. When Multilogin copies the ADB command, this dashboard will connect automatically."
+            : "Click Open selected phone, enable ADB in Multilogin, then click Auto-connect. The dashboard watches the Mac clipboard for the ADB command."
+      )}</p>
+
+      <details class="manual-adb-details">
+        <summary>Manual ADB fallback</summary>
+        <form id="adbConnectForm" class="adb-connect-form">
+          <label>
+            Multilogin ADB commands
+            <textarea id="adbSetupText" rows="2" placeholder="${escapeHtml(setupPlaceholder)}">${escapeHtml(adbSetupText)}</textarea>
+          </label>
+          <div class="button-row inline">
+            <button id="adbPasteButton" class="secondary" type="button">Paste clipboard</button>
+            <button type="submit">Connect + verify</button>
+          </div>
+        </form>
+      </details>
+
+      <div class="button-row inline">
+        <button id="phoneControlTestButton" class="secondary" type="button" ${androidDisabled}>Test screenshot</button>
+        <button id="phoneControlOpenXButton" class="secondary" type="button" ${androidDisabled}>Open X app</button>
+      </div>
 
       <div class="phone-control-steps">
         <span class="${multiloginReady ? "done" : ""}">1 Multilogin ready</span>
@@ -1950,6 +1974,9 @@ async function startProfileControl(profile, { message = "Started. Auto-stop in 3
         ? successMessage.replace("Opened visible phone.", "Phone opened with warning.").replace("Started.", "Started with warning.")
         : successMessage
   );
+  if (profile.profileType === "mobile" && !canRunAndroidCommandsForProfile(profile.id)) {
+    startPhoneAutoConnect(profile);
+  }
   return result;
 }
 
@@ -1992,6 +2019,50 @@ async function openXControl(profile, { message = "Opened Android X app." } = {})
   const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
   showToast(warning ? "X app launch returned a warning. Check Live Agent." : message);
   return result;
+}
+
+async function tryPhoneAutoConnect(profile, { quiet = false } = {}) {
+  const result = await api("/api/multilogin/control-status/auto-connect", {
+    method: "POST",
+    body: JSON.stringify({ profileId: profile?.id || "" })
+  });
+  phoneControlState = result.status;
+  if (profile?.id && result.serial) setAdbMapping(profile.id, result.serial);
+  render();
+
+  if (result.status?.android?.available) {
+    stopPhoneAutoConnect();
+    if (!quiet) showToast("Phone control connected.");
+    return true;
+  }
+
+  if (!quiet) showToast(result.message || result.error || "Waiting for ADB command in clipboard.");
+  return false;
+}
+
+function startPhoneAutoConnect(profile) {
+  if (!profile?.id) throw new Error("Select a mobile profile first.");
+  phoneAutoConnectUntil = Date.now() + 120000;
+  if (phoneAutoConnectTimer) clearInterval(phoneAutoConnectTimer);
+  showToast("Watching Mac clipboard for Multilogin ADB command.");
+  renderPhoneControlPanel();
+
+  const tick = async () => {
+    if (Date.now() > phoneAutoConnectUntil) {
+      stopPhoneAutoConnect();
+      renderPhoneControlPanel();
+      showToast("Auto-connect timed out. Copy the ADB command from Multilogin and try again.");
+      return;
+    }
+    try {
+      await tryPhoneAutoConnect(profile, { quiet: true });
+    } catch (error) {
+      if (!/clipboard|adb command|IP:PORT|Waiting/i.test(error.message)) showToast(error.message);
+    }
+  };
+
+  tick();
+  phoneAutoConnectTimer = setInterval(tick, 2500);
 }
 
 async function runManualCommandControl(profile, command, options = {}) {
@@ -2497,6 +2568,7 @@ document.addEventListener("click", async (event) => {
   const assistiveViewerButton = event.target.closest(".assistive-viewer");
   const assistiveCommandButton = event.target.closest(".assistive-command");
   const phoneControlViewerButton = event.target.closest(".phone-control-viewer");
+  const phoneAutoConnectButton = event.target.closest("#phoneAutoConnectButton");
   const phoneControlTestButton = event.target.closest("#phoneControlTestButton");
   const phoneControlOpenXButton = event.target.closest("#phoneControlOpenXButton");
   const adbPasteButton = event.target.closest("#adbPasteButton");
@@ -2573,7 +2645,6 @@ document.addEventListener("click", async (event) => {
 
   if (toggleAdvancedButton) {
     advancedToolsVisible = !advancedToolsVisible;
-    localStorage.setItem("telephones.advancedTools", advancedToolsVisible ? "true" : "false");
     render();
     showToast(advancedToolsVisible ? "Advanced tools shown." : "Advanced tools hidden.");
   }
@@ -2816,6 +2887,15 @@ document.addEventListener("click", async (event) => {
     const profile = selectedPhoneControlProfile();
     try {
       await openViewerControl(profile, { message: "Selected phone opened." });
+      startPhoneAutoConnect(profile);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (phoneAutoConnectButton) {
+    try {
+      startPhoneAutoConnect(selectedPhoneControlProfile());
     } catch (error) {
       showToast(error.message);
     }

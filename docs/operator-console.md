@@ -43,7 +43,7 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 - **Active Now** is the first place to check. It shows current sessions, queued work, ready profiles, and attention profiles.
 - **Phone Control** shows which controls are available: Multilogin lifecycle controls through xcli/API, and optional Android inside-phone controls through ADB.
 - **Assistive Controller** is the accessibility work surface for the selected phone. It has large explicit commands for viewer, X app launch, X-aware scrolling, screenshots, Back/Home, tap point, and draft typing.
-- The **Phone Control** setup card opens the selected phone, accepts pasted Multilogin ADB commands, verifies connected devices, and can test the control channel with a screenshot.
+- The **Phone Control** setup card opens the selected phone, watches the Mac clipboard for Multilogin ADB commands, verifies connected devices, and can test the control channel with a screenshot.
 - The ADB setup form accepts the two commands Multilogin shows from the green Android icon: `adb connect IP:PORT` and, when required, `adb -s IP:PORT shell glogin PASSWORD`.
 - **My Profiles** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
 - My Profiles cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.

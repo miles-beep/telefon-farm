@@ -605,6 +605,17 @@ function parseAdbSetupInput(payload = {}) {
   };
 }
 
+async function readMacClipboard(env = process.env) {
+  if (os.platform() !== "darwin") {
+    throw new Error("Automatic ADB clipboard connect is currently supported on macOS only.");
+  }
+  const { stdout } = await execFileAsync("pbpaste", [], {
+    timeout: Number(env.MULTILOGIN_CLIPBOARD_TIMEOUT_MS || 2500),
+    maxBuffer: 256 * 1024
+  });
+  return String(stdout || "").trim();
+}
+
 async function swipeAndroidScreen({ profileId, adbSerial, direction = "down", count = 1 } = {}, env = process.env) {
   const size = await getAndroidScreenSize({ profileId, adbSerial }, env);
   const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
@@ -712,6 +723,36 @@ export async function connectAndroidPhoneControl(payload = {}, env = process.env
     authOutput,
     status: await getPhoneControlStatus(env)
   };
+}
+
+export async function autoConnectAndroidPhoneControl(payload = {}, env = process.env) {
+  const currentStatus = await getPhoneControlStatus(env);
+  if (currentStatus.android.available) {
+    return {
+      requestedAt: new Date().toISOString(),
+      source: "existing_adb",
+      message: "Android phone control is already connected.",
+      status: currentStatus
+    };
+  }
+
+  const clipboardText = await readMacClipboard(env);
+  try {
+    return {
+      ...(await connectAndroidPhoneControl({ ...payload, commandText: clipboardText }, env)),
+      source: "mac_clipboard",
+      message: "Connected from the Mac clipboard."
+    };
+  } catch (error) {
+    return {
+      requestedAt: new Date().toISOString(),
+      source: "mac_clipboard",
+      message: "Waiting for Multilogin ADB commands in the Mac clipboard.",
+      clipboardLooksUsable: false,
+      error: error.message,
+      status: currentStatus
+    };
+  }
 }
 
 function isSoftMobileCliError(error) {
