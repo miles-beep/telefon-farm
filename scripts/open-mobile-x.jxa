@@ -3,7 +3,7 @@ ObjC.import("ApplicationServices");
 const app = Application.currentApplication();
 app.includeStandardAdditions = true;
 
-const profileId = $.NSProcessInfo.processInfo.arguments.js.slice(4)[0] || "";
+const profileId = ObjC.deepUnwrap($.NSProcessInfo.processInfo.arguments).slice(4)[0] || "";
 
 function fail(message) {
   throw new Error(message);
@@ -16,7 +16,7 @@ if (!$.AXIsProcessTrusted()) {
 }
 
 function wait(seconds) {
-  app.delay(seconds);
+  delay(seconds);
 }
 
 function point(x, y) {

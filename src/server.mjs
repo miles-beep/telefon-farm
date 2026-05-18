@@ -28,6 +28,7 @@ import {
   installMultiloginMobileXApp,
   openMultiloginMobileViewer,
   openMultiloginMobileX,
+  scrollMultiloginMobilePhone,
   searchMultiloginProfiles,
   startMultiloginProfile,
   stopMultiloginMobileProfile,
@@ -195,6 +196,12 @@ async function executeOperatorTask(taskId) {
         ? await stopMultiloginMobileProfile({ profileId: task.profileId })
         : await stopMultiloginProfile({ profileId: task.profileId });
     completeOperatorTask(task.id, { message: "Profile stop requested.", request: result.request });
+  } else if (task.functionId === "scroll_prompt" && task.profileType === "mobile") {
+    result = await scrollMultiloginMobilePhone({ count: 1 });
+    completeOperatorTask(task.id, {
+      message: "Visible phone scroll gesture sent.",
+      request: result.request
+    });
   }
 
   return {

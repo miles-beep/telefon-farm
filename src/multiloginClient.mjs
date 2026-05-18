@@ -13,6 +13,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MOBILE_X_JXA_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.jxa");
 const MOBILE_X_SWIFT_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
+const MOBILE_SCROLL_MACRO_PATH = path.resolve(__dirname, "../scripts/scroll-mobile-phone.jxa");
 const DEFAULT_X_APP_ID = "1556606452280463360";
 let localEnvLoaded = false;
 
@@ -831,9 +832,47 @@ async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
 function friendlyMacroError(error) {
   const message = String(error?.message || error || "Mobile X opener macro failed.");
   if (/Accessibility permission is required/i.test(message)) {
-    return "Open X needs macOS Accessibility permission for osascript or your terminal.";
+    return "This action needs macOS Accessibility permission for osascript or your terminal.";
   }
   return message.split("\n").find((line) => line.trim()) || "Mobile X opener macro failed.";
+}
+
+export async function scrollMultiloginMobilePhone({ count = 1 } = {}, env = process.env) {
+  if (process.platform !== "darwin") {
+    throw new Error("Mobile phone scrolling is only available on macOS.");
+  }
+  if (!existsSync(MOBILE_SCROLL_MACRO_PATH)) {
+    throw new Error(`Mobile phone scroll macro was not found at ${MOBILE_SCROLL_MACRO_PATH}.`);
+  }
+
+  const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
+  let stdout = "";
+  try {
+    const result = await execFileAsync("/usr/bin/osascript", ["-l", "JavaScript", MOBILE_SCROLL_MACRO_PATH, String(scrollCount)], {
+      timeout: Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000),
+      maxBuffer: 256 * 1024
+    });
+    stdout = result.stdout;
+  } catch (error) {
+    throw new Error(friendlyMacroError(error));
+  }
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Scroll visible mobile phone",
+      method: "osascript",
+      base: "local",
+      path: "scripts/scroll-mobile-phone.jxa"
+    },
+    response: {
+      ok: true,
+      httpStatus: 200,
+      statusText: "OK",
+      payload: { message: `Sent ${scrollCount} visible phone scroll gesture${scrollCount === 1 ? "" : "s"}.` }
+    },
+    output: stdout.trim() || "ok"
+  };
 }
 
 export async function openMultiloginMobileX({ profileId, groupId, ensureInstalled = false, runUiMacro = false } = {}, env = process.env) {

@@ -1,0 +1,61 @@
+ObjC.import("ApplicationServices");
+ObjC.import("CoreGraphics");
+ObjC.import("Foundation");
+
+const requestedCount = Number(ObjC.deepUnwrap($.NSProcessInfo.processInfo.arguments).slice(4)[0] || 1);
+const count = Number.isFinite(requestedCount) ? Math.max(1, Math.min(8, requestedCount)) : 1;
+
+function fail(message) {
+  throw new Error(message);
+}
+
+if (!$.AXIsProcessTrusted()) {
+  fail(
+    "macOS Accessibility permission is required for phone scrolling. Allow osascript or your terminal in System Settings > Privacy & Security > Accessibility."
+  );
+}
+
+function point(x, y) {
+  return $.CGPointMake(Math.round(x), Math.round(y));
+}
+
+function postMouse(type, x, y) {
+  const event = $.CGEventCreateMouseEvent(null, type, point(x, y), $.kCGMouseButtonLeft);
+  $.CGEventPost($.kCGHIDEventTap, event);
+}
+
+function drag(startX, startY, endX, endY) {
+  postMouse($.kCGEventMouseMoved, startX, startY);
+  delay(0.05);
+  postMouse($.kCGEventLeftMouseDown, startX, startY);
+
+  const steps = 28;
+  for (let index = 1; index <= steps; index += 1) {
+    const progress = index / steps;
+    postMouse($.kCGEventLeftMouseDragged, startX + (endX - startX) * progress, startY + (endY - startY) * progress);
+    delay(0.01);
+  }
+
+  postMouse($.kCGEventLeftMouseUp, endX, endY);
+}
+
+function multiloginWindowBounds() {
+  const windows = ObjC.deepUnwrap(
+    ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, $.kCGNullWindowID))
+  );
+  const window = windows.find((item) => String(item.kCGWindowOwnerName || "").includes("Multilogin"));
+  if (!window) fail("Could not find an open Multilogin phone window.");
+  return window.kCGWindowBounds;
+}
+
+const bounds = multiloginWindowBounds();
+const phoneX = Number(bounds.X) + 185;
+const startY = Number(bounds.Y) + Number(bounds.Height) * 0.78;
+const endY = Number(bounds.Y) + Number(bounds.Height) * 0.28;
+
+for (let index = 0; index < count; index += 1) {
+  drag(phoneX, startY, phoneX, endY);
+  delay(0.4);
+}
+
+`Sent ${count} phone scroll gesture${count === 1 ? "" : "s"}.`;
