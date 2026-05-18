@@ -121,7 +121,7 @@ const BLOCKED_CATEGORIES = [
   "Profile import/export and object storage mutation",
   "Bookmark import/copy/export operations",
   "2FA setup, verification, backup code, or device mutation",
-  "Automating third-party websites, social actions, likes, comments, saves, reposts, or follows"
+  "Unsupervised or bulk third-party website actions, likes, comments, saves, reposts, or follows"
 ];
 
 function normalizeBaseUrl(value, fallback) {
@@ -458,13 +458,48 @@ async function runAdb(args, env = process.env) {
   }
 }
 
-async function listConnectedAdbDevices(env = process.env) {
-  const stdout = await runAdb(["devices"], env);
-  return stdout
+async function runAdbBuffer(args, env = process.env) {
+  const config = getAdbConfig(env);
+
+  try {
+    const { stdout } = await execFileAsync(config.adbPath, args, {
+      timeout: config.timeoutMs,
+      maxBuffer: 12 * 1024 * 1024,
+      encoding: "buffer"
+    });
+    return Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || "");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("ADB was not found. Install Android platform-tools or set ADB_PATH.");
+    }
+    const output = Buffer.isBuffer(error.stdout)
+      ? error.stdout.toString("utf8")
+      : String(`${error.stdout || ""}\n${error.stderr || ""}`).trim();
+    const message = String(output || error.message || "adb command failed").split("\n").find(Boolean);
+    throw new Error(`ADB failed: ${message}`);
+  }
+}
+
+function parseAdbDeviceRows(stdout) {
+  return String(stdout || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .map((line) => line.match(/^(\S+)\s+device$/)?.[1] || "")
+    .map((line) => {
+      const match = line.match(/^(\S+)\s+(\S+)/);
+      if (!match || match[1] === "List") return null;
+      return {
+        serial: match[1],
+        status: match[2]
+      };
+    })
     .filter(Boolean);
+}
+
+async function listConnectedAdbDevices(env = process.env) {
+  const stdout = await runAdb(["devices"], env);
+  return parseAdbDeviceRows(stdout)
+    .filter((device) => device.status === "device")
+    .map((device) => device.serial);
 }
 
 async function resolveAdbSerial({ profileId, adbSerial } = {}, env = process.env) {
@@ -513,6 +548,120 @@ async function getAndroidScreenSize({ profileId, adbSerial } = {}, env = process
     serial: result.serial,
     ...parseAndroidScreenSize(result.output)
   };
+}
+
+function clampPoint(value, max) {
+  return Math.max(0, Math.min(max, Math.round(Number(value))));
+}
+
+function resolveAndroidPoint(screen, payload = {}) {
+  const width = Number(screen.width || 1080);
+  const height = Number(screen.height || 1920);
+  const hasAbsolute = Number.isFinite(Number(payload.x)) && Number.isFinite(Number(payload.y));
+  const x = hasAbsolute ? Number(payload.x) : width * Number(payload.xRatio ?? 0.5);
+  const y = hasAbsolute ? Number(payload.y) : height * Number(payload.yRatio ?? 0.5);
+  return {
+    x: clampPoint(x, width),
+    y: clampPoint(y, height)
+  };
+}
+
+function encodeAndroidInputText(text) {
+  return String(text || "")
+    .slice(0, 500)
+    .replace(/\\/g, "\\\\")
+    .replace(/\s+/g, "%s")
+    .replace(/([&<>;|*~"'`()[\]{}$])/g, "\\$1");
+}
+
+async function swipeAndroidScreen({ profileId, adbSerial, direction = "down", count = 1 } = {}, env = process.env) {
+  const size = await getAndroidScreenSize({ profileId, adbSerial }, env);
+  const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
+  const x = Math.round(size.width * 0.5);
+  const down = String(direction || "down") !== "up";
+  const startY = Math.round(size.height * (down ? 0.78 : 0.28));
+  const endY = Math.round(size.height * (down ? 0.28 : 0.78));
+  const durationMs = Number(env.MULTILOGIN_ADB_SWIPE_DURATION_MS || 450);
+  const swipes = [];
+
+  for (let index = 0; index < scrollCount; index += 1) {
+    const swipe = await runAdbShell(
+      {
+        profileId,
+        adbSerial: size.serial,
+        shellArgs: ["input", "swipe", x, startY, x, endY, durationMs]
+      },
+      env
+    );
+    swipes.push(swipe.output || "ok");
+    if (index < scrollCount - 1) {
+      await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_SCROLL_PAUSE_MS || 500)));
+    }
+  }
+
+  return {
+    serial: size.serial,
+    width: size.width,
+    height: size.height,
+    swipes: scrollCount,
+    direction: down ? "down" : "up",
+    output: swipes
+  };
+}
+
+export async function getPhoneControlStatus(env = process.env) {
+  const multilogin = getMultiloginConfig(env);
+  const adbConfig = getAdbConfig(env);
+  const adbMappings = parseAdbSerialMappings(env.MULTILOGIN_ADB_SERIALS);
+  const profileSpecificAdbKeys = Object.keys(env).filter((key) => key.startsWith("MULTILOGIN_ADB_SERIAL_"));
+  const configuredSerials = [
+    ...adbMappings.values(),
+    String(env.MULTILOGIN_ADB_SERIAL || "").trim(),
+    ...profileSpecificAdbKeys.map((key) => String(env[key] || "").trim())
+  ].filter(Boolean);
+
+  const status = {
+    checkedAt: new Date().toISOString(),
+    multilogin: {
+      available: Boolean(multilogin.enabled && multilogin.hasXcli),
+      enabled: multilogin.enabled,
+      hasXcli: multilogin.hasXcli,
+      hasToken: multilogin.hasToken,
+      controls: ["Sync profiles", "Start phone", "Open viewer", "Stop phone", "Install X"]
+    },
+    android: {
+      available: false,
+      installed: false,
+      path: adbConfig.adbPath,
+      devices: [],
+      connectedDevices: [],
+      configuredSerials,
+      error: "",
+      requiredFor: ["Open X app", "Scroll review", "Scroll 3x"]
+    },
+    explanation:
+      "Multilogin controls the cloud-phone lifecycle. Android app launch and swipe commands happen inside the running phone, so they use ADB."
+  };
+
+  try {
+    const stdout = await runAdb(["devices"], env);
+    status.android.installed = true;
+    status.android.devices = parseAdbDeviceRows(stdout);
+    status.android.connectedDevices = status.android.devices
+      .filter((device) => device.status === "device")
+      .map((device) => device.serial);
+    status.android.available = status.android.connectedDevices.length > 0;
+    if (!status.android.available) {
+      status.android.error = status.android.devices.length
+        ? "ADB is installed, but no authorized cloud phone is connected."
+        : "ADB is installed, but no cloud phone is connected.";
+    }
+  } catch (error) {
+    status.android.error = error.message;
+    status.android.installed = !/not found/i.test(error.message);
+  }
+
+  return status;
 }
 
 function isSoftMobileCliError(error) {
@@ -922,30 +1071,8 @@ export async function scrollAndroidXApp({ profileId, adbSerial, count = 1, packa
   }
 
   const openResult = await openAndroidXApp({ profileId, adbSerial, packageName }, env);
-  const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
   await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_APP_FOCUS_DELAY_MS || 800)));
-
-  const size = await getAndroidScreenSize({ profileId, adbSerial: openResult.response.payload.adbSerial }, env);
-  const x = Math.round(size.width * 0.5);
-  const startY = Math.round(size.height * 0.78);
-  const endY = Math.round(size.height * 0.28);
-  const durationMs = Number(env.MULTILOGIN_ADB_SWIPE_DURATION_MS || 450);
-  const swipes = [];
-
-  for (let index = 0; index < scrollCount; index += 1) {
-    const swipe = await runAdbShell(
-      {
-        profileId,
-        adbSerial: size.serial,
-        shellArgs: ["input", "swipe", x, startY, x, endY, durationMs]
-      },
-      env
-    );
-    swipes.push(swipe.output || "ok");
-    if (index < scrollCount - 1) {
-      await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_SCROLL_PAUSE_MS || 500)));
-    }
-  }
+  const swipe = await swipeAndroidScreen({ profileId, adbSerial: openResult.response.payload.adbSerial, count, direction: "down" }, env);
 
   return {
     requestedAt: new Date().toISOString(),
@@ -960,23 +1087,184 @@ export async function scrollAndroidXApp({ profileId, adbSerial, count = 1, packa
       httpStatus: 200,
       statusText: "OK",
       payload: {
-        message: `Opened Android X app and sent ${scrollCount} feed scroll${scrollCount === 1 ? "" : "s"} on ${size.serial}.`,
-        adbSerial: size.serial,
-        swipes: scrollCount,
+        message: `Opened Android X app and sent ${swipe.swipes} feed scroll${swipe.swipes === 1 ? "" : "s"} on ${swipe.serial}.`,
+        adbSerial: swipe.serial,
+        swipes: swipe.swipes,
         screen: {
-          width: size.width,
-          height: size.height
+          width: swipe.width,
+          height: swipe.height
         }
       }
     },
     openResult,
-    swipes,
+    swipes: swipe.output,
     output: "ok"
   };
 }
 
 export async function openMultiloginMobileX(options = {}, env = process.env) {
   return openAndroidXApp(options, env);
+}
+
+export async function runAndroidAssistiveCommand(
+  { profileId, adbSerial, command, text, x, y, xRatio, yRatio, count = 1, direction = "down" } = {},
+  env = process.env
+) {
+  if (!profileId) {
+    throw new Error("Assistive Android commands require profileId.");
+  }
+
+  const normalizedCommand = String(command || "").trim();
+  const now = new Date().toISOString();
+
+  if (normalizedCommand === "screenshot") {
+    const serial = await resolveAdbSerial({ profileId, adbSerial }, env);
+    const buffer = await runAdbBuffer(["-s", serial, "exec-out", "screencap", "-p"], env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Screenshot",
+        method: "adb",
+        base: "local",
+        path: "adb exec-out screencap -p"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: `Screenshot captured from ${serial}.`,
+          adbSerial: serial,
+          imageMime: "image/png",
+          imageBase64: buffer.toString("base64")
+        }
+      },
+      output: "ok"
+    };
+  }
+
+  if (normalizedCommand === "scroll" || normalizedCommand === "scroll_down" || normalizedCommand === "scroll_up") {
+    const swipe = await swipeAndroidScreen(
+      {
+        profileId,
+        adbSerial,
+        count,
+        direction: normalizedCommand === "scroll_up" ? "up" : direction
+      },
+      env
+    );
+    return {
+      requestedAt: now,
+      request: {
+        label: "Assistive scroll",
+        method: "adb",
+        base: "local",
+        path: "adb shell input swipe"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: `Sent ${swipe.swipes} ${swipe.direction} scroll${swipe.swipes === 1 ? "" : "s"} on ${swipe.serial}.`,
+          adbSerial: swipe.serial,
+          swipes: swipe.swipes,
+          direction: swipe.direction,
+          screen: {
+            width: swipe.width,
+            height: swipe.height
+          }
+        }
+      },
+      output: "ok"
+    };
+  }
+
+  if (normalizedCommand === "tap") {
+    const size = await getAndroidScreenSize({ profileId, adbSerial }, env);
+    const point = resolveAndroidPoint(size, { x, y, xRatio, yRatio });
+    const result = await runAdbShell({ profileId, adbSerial: size.serial, shellArgs: ["input", "tap", point.x, point.y] }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Assistive tap",
+        method: "adb",
+        base: "local",
+        path: "adb shell input tap"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: `Tapped ${point.x},${point.y} on ${size.serial}.`,
+          adbSerial: size.serial,
+          point,
+          screen: {
+            width: size.width,
+            height: size.height
+          }
+        }
+      },
+      output: result.output || "ok"
+    };
+  }
+
+  if (normalizedCommand === "type_text") {
+    const safeText = encodeAndroidInputText(text);
+    if (!safeText) throw new Error("Add draft text before typing.");
+    const result = await runAdbShell({ profileId, adbSerial, shellArgs: ["input", "text", safeText] }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Type draft",
+        method: "adb",
+        base: "local",
+        path: "adb shell input text"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: "Typed draft text into the focused Android field.",
+          adbSerial: result.serial,
+          characters: String(text || "").length
+        }
+      },
+      output: result.output || "ok"
+    };
+  }
+
+  const keyEvents = {
+    key_back: 4,
+    key_home: 3,
+    key_enter: 66
+  };
+  if (Object.hasOwn(keyEvents, normalizedCommand)) {
+    const result = await runAdbShell({ profileId, adbSerial, shellArgs: ["input", "keyevent", keyEvents[normalizedCommand]] }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: normalizedCommand.replace("key_", "Key "),
+        method: "adb",
+        base: "local",
+        path: "adb shell input keyevent"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: `${normalizedCommand.replace("key_", "").toUpperCase()} sent to ${result.serial}.`,
+          adbSerial: result.serial
+        }
+      },
+      output: result.output || "ok"
+    };
+  }
+
+  throw new Error(`Unsupported assistive Android command: ${normalizedCommand}`);
 }
 
 export async function stopMultiloginMobileProfile({ profileId } = {}, env = process.env) {

@@ -27,8 +27,10 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
-- **Live Agent** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
-- **Priority Board** for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
+- **Active Now** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
+- **Phone Control** status panel that separates Multilogin lifecycle controls from optional Android/ADB inside-phone controls
+- **Assistive Controller** for explicit accessibility commands on the selected phone: open viewer, open X, scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
+- **My Profiles** board for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
 - Local Review Queue and Comment Drafts panels for manual follow-up work
@@ -40,9 +42,10 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Dashboard controls to start and stop Multilogin profiles
 - Mobile cloud-phone **Start + View** opens the visible Multilogin phone window so the session can be tested directly
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
-- Mobile cloud-phone **Open X app** launches the installed Android X app through ADB when the cloud phone is connected
-- Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`
+- Mobile cloud-phone **Open X app** launches the installed Android X app only when Android/ADB inside-phone controls are connected
+- Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`, disabled until Android/ADB control is available
 - Android app launch and scroll commands use ADB against the selected cloud phone
+- Draft helpers can type text you prepared into the currently focused Android field; they do not choose content or submit posts by themselves
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
@@ -65,7 +68,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** to watch the phone, or **Open X app** to foreground the installed Android X app through ADB. The **Live Agent** strip shows active sessions first, then queued work, ready profiles, and attention items.
+11. Use **Viewer** to watch the phone. Use **Assistive Controller** commands after the **Phone Control** panel shows Android inside-phone controls are ready.
 12. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
@@ -85,7 +88,7 @@ MULTILOGIN_ENABLED=true MULTILOGIN_TOKEN="your_token" npm start
 ```
 
 See `docs/multilogin-api.md` for the implemented endpoint list and boundaries.
-For Android app commands, enable ADB on the running cloud phone and map it with `MULTILOGIN_ADB_SERIALS` if more than one device is connected.
+Multilogin/xcli controls cloud-phone lifecycle: sync, start, viewer, stop, and app installation. It does not expose a documented API for pressing inside Android, launching one installed Android package, or swiping the app feed. Those inside-phone commands use Multilogin's ADB cloud-phone feature. Enable ADB on the running cloud phone and map it with `MULTILOGIN_ADB_SERIALS` if more than one device is connected.
 
 ## Terminal Control
 

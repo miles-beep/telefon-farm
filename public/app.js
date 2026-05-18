@@ -59,6 +59,8 @@ const nodes = {
   dailyDone: $("#dailyDone"),
   dailyAttention: $("#dailyAttention"),
   liveAgentSummary: $("#liveAgentSummary"),
+  phoneControlPanel: $("#phoneControlPanel"),
+  assistiveController: $("#assistiveController"),
   liveAgentBoard: $("#liveAgentBoard"),
   sessionOverview: $("#sessionOverview"),
   profileBucketSummary: $("#profileBucketSummary"),
@@ -95,6 +97,8 @@ const nodes = {
 let appState = null;
 let multiloginState = null;
 let operatorState = null;
+let phoneControlState = null;
+let assistiveLastReport = null;
 let multiloginProfilesState = {
   profiles: [],
   total: 0,
@@ -162,6 +166,18 @@ function showToast(message) {
   nodes.toast.classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => nodes.toast.classList.remove("visible"), 2600);
+}
+
+function canRunAndroidCommands() {
+  return Boolean(phoneControlState?.android?.available);
+}
+
+function androidControlReason() {
+  return phoneControlState?.android?.error || "Android in-phone controls need ADB connected to the running cloud phone.";
+}
+
+function androidButtonAttrs() {
+  return canRunAndroidCommands() ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
 }
 
 function platformById(platformId) {
@@ -677,9 +693,12 @@ function profileFromButton(button) {
 
 function renderManualCommandControls(profile) {
   if (profile?.profileType !== "mobile") return "";
+  const androidReady = canRunAndroidCommands();
+  const disabled = androidReady ? "" : "disabled";
+  const title = androidReady ? "Runs inside the Android cloud phone." : androidControlReason();
   return `
     <div class="manual-command" data-profile-id="${escapeHtml(profile.id)}">
-      <select class="manual-command-select" aria-label="Manual phone command">
+      <select class="manual-command-select" aria-label="Manual phone command" ${disabled} title="${escapeHtml(title)}">
         <option value="open_x_app">Open X app</option>
         <option value="scroll_prompt">Scroll review</option>
         <option value="scroll_3">Scroll 3x</option>
@@ -691,7 +710,10 @@ function renderManualCommandControls(profile) {
         data-profile-name="${escapeHtml(profile.name || "")}"
         data-folder-id="${escapeHtml(profile.folderId)}"
         data-profile-type="mobile"
+        ${disabled}
+        title="${escapeHtml(title)}"
       >Run</button>
+      ${androidReady ? "" : `<span>${escapeHtml("ADB setup needed")}</span>`}
     </div>
   `;
 }
@@ -814,6 +836,12 @@ function selectedSession() {
   const profile = selectedSessionProfile();
   if (profile?.id) return activeSessionForProfile(profile.id) || null;
   return operatorState?.activeSession || null;
+}
+
+function assistiveProfile() {
+  const activeSession = operatorState?.activeSession;
+  const activeProfile = activeSession?.profileId ? multiloginProfileById(activeSession.profileId) : null;
+  return activeProfile || selectedSessionProfile() || priorityProfiles()[0]?.profile || null;
 }
 
 function renderSessionConsole() {
@@ -1066,7 +1094,7 @@ function renderPriorityBoard() {
             <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Start + View</button>
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open X app</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs()}>Open X app</button>`
                 : ""
             }
             ${
@@ -1096,6 +1124,124 @@ function latestProfileReport(profileId) {
   if (record?.lastStartedAt) return `Started ${formatRelative(record.lastStartedAt)}`;
   if (session?.currentPrompt?.label) return `Current prompt: ${session.currentPrompt.label}`;
   return "No report yet.";
+}
+
+function renderPhoneControlPanel() {
+  if (!nodes.phoneControlPanel) return;
+
+  if (!phoneControlState) {
+    nodes.phoneControlPanel.innerHTML = `<p class="empty">Checking phone control capabilities...</p>`;
+    return;
+  }
+
+  const multiloginReady = phoneControlState.multilogin?.available;
+  const androidReady = phoneControlState.android?.available;
+  const adbDevices = phoneControlState.android?.connectedDevices || [];
+  const adbDeviceText = adbDevices.length ? adbDevices.join(", ") : "No connected Android phone";
+  const adbError = phoneControlState.android?.error || "";
+
+  nodes.phoneControlPanel.innerHTML = `
+    <article class="phone-control-card ${multiloginReady ? "ready" : "blocked"}">
+      <header>
+        <div>
+          <strong>Multilogin controls</strong>
+          <p>Start, viewer, stop, profile sync, and X install.</p>
+        </div>
+        <span class="tag ${multiloginReady ? "ready" : "problem"}">${multiloginReady ? "ready" : "blocked"}</span>
+      </header>
+    </article>
+    <article class="phone-control-card ${androidReady ? "ready" : "blocked"}">
+      <header>
+        <div>
+          <strong>Inside-phone controls</strong>
+          <p>Open X app and scroll the Android screen.</p>
+        </div>
+        <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "ready" : "setup needed"}</span>
+      </header>
+      <div class="phone-control-meta">
+        <span>${escapeHtml(adbDeviceText)}</span>
+        ${adbError ? `<span>${escapeHtml(adbError)}</span>` : ""}
+      </div>
+    </article>
+    <article class="phone-control-note">
+      ${escapeHtml(phoneControlState.explanation || "Multilogin opens the phone. Android commands need a connected phone-control channel.")}
+    </article>
+  `;
+}
+
+function renderAssistiveController() {
+  if (!nodes.assistiveController) return;
+
+  const profile = assistiveProfile();
+  const androidReady = canRunAndroidCommands();
+  const androidAttrs = androidReady ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
+  const draftText = localStorage.getItem("telephones.assistiveDraft") || "";
+  const report = assistiveLastReport;
+
+  if (!profile) {
+    nodes.assistiveController.innerHTML = `
+      <article class="assistive-empty">
+        <strong>No profile selected.</strong>
+        <span>Sync your Multilogin profiles, then select one of your own phones.</span>
+      </article>
+    `;
+    return;
+  }
+
+  nodes.assistiveController.innerHTML = `
+    <article class="assistive-panel">
+      <header>
+        <div>
+          <span>Assistive Controller</span>
+          <strong>${escapeHtml(profile.name || profile.id)}</strong>
+          <p>${escapeHtml(profile.profileType === "mobile" ? `Mobile | Serial ${profile.serialNumber || "unknown"}` : "Browser profile")}</p>
+        </div>
+        <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "phone control ready" : "viewer only"}</span>
+      </header>
+
+      <div class="assistive-actions">
+        <button class="assistive-viewer" type="button" data-profile-id="${escapeHtml(profile.id)}">Open Viewer</button>
+        <button class="secondary assistive-command" type="button" data-command="open_x_app" ${androidAttrs}>Open X</button>
+        <button class="secondary assistive-command" type="button" data-command="scroll_down" data-count="1" ${androidAttrs}>Scroll</button>
+        <button class="secondary assistive-command" type="button" data-command="scroll_down" data-count="3" ${androidAttrs}>Scroll 3x</button>
+        <button class="secondary assistive-command" type="button" data-command="screenshot" ${androidAttrs}>Screenshot</button>
+        <button class="secondary assistive-command" type="button" data-command="key_back" ${androidAttrs}>Back</button>
+        <button class="secondary assistive-command" type="button" data-command="key_home" ${androidAttrs}>Home</button>
+      </div>
+
+      <div class="assistive-draft-grid">
+        <label>
+          Draft helper
+          <textarea id="assistiveDraftText" rows="3" placeholder="Write or paste a draft. Focus the field on the phone, then use Type Draft.">${escapeHtml(draftText)}</textarea>
+        </label>
+        <button class="secondary assistive-command" type="button" data-command="type_text" ${androidAttrs}>Type Draft</button>
+      </div>
+
+      <div class="assistive-tap-grid">
+        <label>
+          X %
+          <input id="assistiveTapX" type="number" min="0" max="100" value="50" />
+        </label>
+        <label>
+          Y %
+          <input id="assistiveTapY" type="number" min="0" max="100" value="50" />
+        </label>
+        <button class="secondary assistive-command" type="button" data-command="tap" ${androidAttrs}>Tap Point</button>
+      </div>
+
+      <div class="assistive-report">
+        ${
+          report
+            ? `
+              <strong>${escapeHtml(report.message || "Command completed.")}</strong>
+              <span>${escapeHtml(formatRelative(report.at))}</span>
+              ${report.image ? `<img src="${escapeHtml(report.image)}" alt="Latest phone screenshot" />` : ""}
+            `
+            : `<p class="empty">No assistive command report yet.</p>`
+        }
+      </div>
+    </article>
+  `;
 }
 
 function renderLiveAgentBoard() {
@@ -1152,7 +1298,7 @@ function renderLiveAgentBoard() {
             }
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open X app</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs()}>Open X app</button>`
                 : ""
             }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
@@ -1447,6 +1593,8 @@ function render() {
   renderAgents();
   renderAccountsTable();
   renderOtpQueue();
+  renderPhoneControlPanel();
+  renderAssistiveController();
   renderLiveAgentBoard();
   renderSessionOverview();
   renderPriorityBoard();
@@ -1460,10 +1608,16 @@ function render() {
 
 async function loadState({ quiet = false } = {}) {
   try {
-    const [state, multilogin, operator] = await Promise.all([api("/api/state"), api("/api/multilogin"), api("/api/operator")]);
+    const [state, multilogin, operator, phoneControl] = await Promise.all([
+      api("/api/state"),
+      api("/api/multilogin"),
+      api("/api/operator"),
+      api("/api/multilogin/control-status")
+    ]);
     appState = state;
     multiloginState = multilogin;
     operatorState = operator;
+    phoneControlState = phoneControl;
     nodes.serverStatus.textContent = "Online";
     nodes.serverStatus.classList.add("online");
     render();
@@ -1610,7 +1764,7 @@ function sessionPayload(profile) {
     folderId: profile.folderId || "",
     targetUrl: nodes.sessionTargetUrl.value,
     notes: nodes.sessionNotes.value,
-    openX: profile.profileType === "mobile",
+    openX: profile.profileType === "mobile" && canRunAndroidCommands(),
     runUiMacro: false
   };
 }
@@ -1640,6 +1794,8 @@ async function startWorkForProfile(profile, { message = "Work session started." 
   await loadMultiloginProfiles({ quiet: true });
   if (result.openXResult?.error) {
     showToast(`Started, but Open X app failed: ${result.openXResult.error}`);
+  } else if (profile.profileType === "mobile" && !canRunAndroidCommands()) {
+    showToast("Phone opened through Multilogin. Open X manually until inside-phone controls are connected.");
   } else if (message) {
     showToast(message);
   }
@@ -1689,6 +1845,11 @@ async function openViewerControl(profile, { message = "Opened Multilogin viewer.
 
 async function openXControl(profile, { message = "Opened Android X app." } = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
+  if (!canRunAndroidCommands()) {
+    await openViewerControl(profile, { message: "Opened phone viewer. Open X manually until inside-phone controls are connected." });
+    return null;
+  }
+
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
     method: "POST",
     body: JSON.stringify({
@@ -1705,9 +1866,10 @@ async function openXControl(profile, { message = "Opened Android X app." } = {})
   return result;
 }
 
-async function runManualCommandControl(profile, command) {
+async function runManualCommandControl(profile, command, options = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
   if (profile.profileType !== "mobile") throw new Error("Manual phone commands are only available for mobile profiles.");
+  if (!canRunAndroidCommands()) throw new Error(androidControlReason());
 
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/command`, {
     method: "POST",
@@ -1715,12 +1877,20 @@ async function runManualCommandControl(profile, command) {
       profileName: profile.name || "",
       profileType: profile.profileType || "mobile",
       folderId: profile.folderId || "",
-      command
+      command,
+      ...options
     })
   });
   if (result.snapshot) operatorState = result.snapshot;
+  const payload = result.response?.payload || {};
+  assistiveLastReport = {
+    profileId: profile.id,
+    message: payload.message || `${result.commandLabel || "Command"} completed.`,
+    image: payload.imageBase64 ? `data:${payload.imageMime || "image/png"};base64,${payload.imageBase64}` : null,
+    at: result.requestedAt || new Date().toISOString()
+  };
   render();
-  showToast(result.response?.payload?.message || `${result.commandLabel || "Command"} completed.`);
+  showToast(assistiveLastReport.message);
   return result;
 }
 
@@ -2193,6 +2363,8 @@ document.addEventListener("click", async (event) => {
   const operatorStatusButton = event.target.closest(".operator-task-status");
   const sessionOverviewSelectButton = event.target.closest(".session-overview-select");
   const sessionOverviewStopButton = event.target.closest(".session-overview-stop");
+  const assistiveViewerButton = event.target.closest(".assistive-viewer");
+  const assistiveCommandButton = event.target.closest(".assistive-command");
 
   if (verifyButton) {
     try {
@@ -2298,10 +2470,10 @@ document.addEventListener("click", async (event) => {
   if (queueReviewButton) {
     try {
       await queueOperatorTask({
-        functionId: "open_x_app",
+        functionId: canRunAndroidCommands() ? "open_x_app" : "open_post_prompt",
         profileId: queueReviewButton.dataset.profileId,
         targetUrl: "",
-        notes: "Open X app for review"
+        notes: canRunAndroidCommands() ? "Open X app for review" : "Review manually in the visible phone viewer"
       });
     } catch (error) {
       showToast(error.message);
@@ -2426,10 +2598,10 @@ document.addEventListener("click", async (event) => {
   if (priorityQueueButton) {
     try {
       await queueOperatorTask({
-        functionId: "open_x_app",
+        functionId: canRunAndroidCommands() ? "open_x_app" : "open_post_prompt",
         profileId: priorityQueueButton.dataset.profileId,
         targetUrl: nodes.sessionTargetUrl.value,
-        notes: "Open X app from priority board"
+        notes: canRunAndroidCommands() ? "Open X app from priority board" : "Review manually in the visible phone viewer"
       });
     } catch (error) {
       showToast(error.message);
@@ -2475,6 +2647,39 @@ document.addEventListener("click", async (event) => {
       showToast(error.message);
     } finally {
       manualCommandButton.disabled = false;
+    }
+  }
+
+  if (assistiveViewerButton) {
+    const profile = assistiveProfile();
+    try {
+      await openViewerControl(profile, { message: "Viewer opened." });
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (assistiveCommandButton) {
+    const profile = assistiveProfile();
+    const command = assistiveCommandButton.dataset.command;
+    const draft = document.querySelector("#assistiveDraftText")?.value || "";
+    const tapX = Number(document.querySelector("#assistiveTapX")?.value || 50);
+    const tapY = Number(document.querySelector("#assistiveTapY")?.value || 50);
+    const options = {
+      count: Number(assistiveCommandButton.dataset.count || 1),
+      text: command === "type_text" ? draft : "",
+      xRatio: command === "tap" ? tapX / 100 : undefined,
+      yRatio: command === "tap" ? tapY / 100 : undefined
+    };
+
+    try {
+      localStorage.setItem("telephones.assistiveDraft", draft);
+      assistiveCommandButton.disabled = true;
+      await runManualCommandControl(profile, command, options);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      assistiveCommandButton.disabled = false;
     }
   }
 

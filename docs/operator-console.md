@@ -40,9 +40,12 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 
 ## Workbench Controls
 
-- **Priority Board** is the first place to check. It shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
-- Priority Board cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.
-- Priority Board actions let you select a profile, start it, open X, open Viewer, queue a local task, or stop it.
+- **Active Now** is the first place to check. It shows current sessions, queued work, ready profiles, and attention profiles.
+- **Phone Control** shows which controls are available: Multilogin lifecycle controls through xcli/API, and optional Android inside-phone controls through ADB.
+- **Assistive Controller** is the accessibility work surface for the selected phone. It has large explicit commands for viewer, X app launch, scrolling, screenshots, Back/Home, tap point, and draft typing.
+- **My Profiles** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
+- My Profiles cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.
+- My Profiles actions let you select a profile, start it, open Viewer, queue a local task, stop it, and use Open X only when Android inside-phone controls are ready.
 - **Open Next Ready Profile** selects the next profile in the Ready bucket, starts the local work session, and opens X for mobile profiles.
 - **Cooldown 1h** marks the selected profile as resting locally so it is skipped by the next-ready picker.
 - **Clear Issue** returns the selected profile to Ready.
@@ -101,13 +104,14 @@ npm run mlx -- session-stop <session_id>
 
 - `Start 30m`: calls `xcli mobile-profiles-phone-start`, marks the profile running locally, and sets a 30-minute auto-stop timer. If Multilogin rejects background start, it automatically launches Viewer instead and keeps the same timer.
 - `Viewer`: calls `xcli mobile-phone-launch` and opens the visible cloud-phone window. If Multilogin returns an unclear launch URL response, the profile is still tracked locally with a warning.
-- `Open X app`: launches the installed Android X app with ADB, using `com.twitter.android` by default.
+- `Open X app`: launches the installed Android X app with ADB, using `com.twitter.android` by default. This button is disabled until a cloud phone is connected for Android inside-phone control.
 - `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
 - `Stop`: calls both `xcli mobile-phone-shutdown` and `xcli mobile-profiles-phone-stop` because Multilogin separates visible phone shutdown from the mobile proxy-start path.
 - `Manual command`: runs one explicit Android command selected by the operator, such as `Open X app`, `Scroll review`, or `Scroll 3x`, and records the result on the profile.
+- `Assistive Controller`: runs one explicit user-chosen Android command at a time. Draft typing only types text into the focused field on the phone; it does not decide what to say or submit content by itself.
 
 Multilogin may reject the background start path with an internal server error for some profiles. In that case the dashboard falls back to `Viewer`, which is the documented cloud-phone launch path.
 
-ADB must be enabled on the running cloud phone. If more than one ADB device is connected, map the profile with `MULTILOGIN_ADB_SERIAL_<profile_id>` or `MULTILOGIN_ADB_SERIALS`.
+Multilogin/xcli handles profile lifecycle only: list, status, start, visible viewer, stop, and app installation. App launch and swipes happen inside Android, so the dashboard uses Multilogin's documented ADB cloud-phone feature for those commands. If more than one ADB device is connected, map the profile with `MULTILOGIN_ADB_SERIAL_<profile_id>` or `MULTILOGIN_ADB_SERIALS`.
 
 Started or opened profiles are tracked locally with `autoStopAt`. The server checks that field and requests a Multilogin stop when the 30-minute window expires.

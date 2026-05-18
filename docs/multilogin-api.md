@@ -52,6 +52,7 @@ The default launcher URL uses local port `45001`, matching the local launcher/ag
 
 ```txt
 GET  /api/multilogin
+GET  /api/multilogin/control-status
 GET  /api/multilogin/profiles
 POST /api/multilogin/read-only
 POST /api/multilogin/profiles/:profileId/start
@@ -90,12 +91,14 @@ Example body:
 - Mobile cloud phone stop: `xcli mobile-phone-shutdown --ids <profile_id>` and `xcli mobile-profiles-phone-stop --ids <profile_id>`
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
 - Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
+- Phone control status: checks Multilogin/xcli lifecycle capability and Android/ADB inside-phone capability separately
 - Android X app launch: `adb shell monkey -p com.twitter.android -c android.intent.category.LAUNCHER 1`
 - Manual Android phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "open_x_app"`, `command: "scroll_prompt"`, or `command: "scroll_3"`
+- Assistive Android commands: the same command endpoint also accepts `screenshot`, `scroll_down`, `scroll_up`, `tap`, `type_text`, `key_back`, `key_home`, and `key_enter` when Android/ADB control is connected.
 
 Mobile cloud-phone sync can still work without `MULTILOGIN_TOKEN` as long as local `xcli` is logged in and the Multilogin agent/launcher is running. Browser profile cloud API calls still require the token.
 
-ADB command routing uses the single connected Android device by default. If multiple phones are connected, set `MULTILOGIN_ADB_SERIAL_<profile_id>`, `MULTILOGIN_ADB_SERIAL`, or `MULTILOGIN_ADB_SERIALS="profile_id=ip:port"`.
+The Multilogin API/xcli layer handles lifecycle only: sync, start, viewer, stop, and app installation. It does not expose a documented endpoint for launching one installed Android package or swiping inside the running phone. ADB command routing uses the single connected Android device by default. If multiple phones are connected, set `MULTILOGIN_ADB_SERIAL_<profile_id>`, `MULTILOGIN_ADB_SERIAL`, or `MULTILOGIN_ADB_SERIALS="profile_id=ip:port"`.
 
 ## Explicitly Not Implemented
 

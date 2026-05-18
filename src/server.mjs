@@ -25,9 +25,11 @@ import {
   callMultiloginReadOnly,
   getMultiloginMobileProfileStatuses,
   getMultiloginOverview,
+  getPhoneControlStatus,
   installMultiloginMobileXApp,
   openAndroidXApp,
   openMultiloginMobileViewer,
+  runAndroidAssistiveCommand,
   scrollAndroidXApp,
   searchMultiloginProfiles,
   startMultiloginProfile,
@@ -242,6 +244,30 @@ async function executeManualMobileCommand(profileId, body = {}) {
   } else if (command === "scroll_3") {
     label = "Scroll 3x";
     result = await scrollAndroidXApp({ profileId, adbSerial: body.adbSerial, count: 3 });
+  } else if (["screenshot", "scroll_down", "scroll_up", "tap", "type_text", "key_back", "key_home", "key_enter"].includes(command)) {
+    const labels = {
+      screenshot: "Screenshot",
+      scroll_down: "Scroll down",
+      scroll_up: "Scroll up",
+      tap: "Tap",
+      type_text: "Type draft",
+      key_back: "Back",
+      key_home: "Home",
+      key_enter: "Enter"
+    };
+    label = labels[command] || "Assistive command";
+    result = await runAndroidAssistiveCommand({
+      profileId,
+      adbSerial: body.adbSerial,
+      command,
+      text: body.text,
+      x: body.x,
+      y: body.y,
+      xRatio: body.xRatio,
+      yRatio: body.yRatio,
+      count: body.count,
+      direction: body.direction
+    });
   } else {
     throw new Error(`Unsupported manual phone command: ${command}`);
   }
@@ -614,6 +640,12 @@ async function handleApi(request, response, url) {
       .map((profileId) => profileId.trim())
       .filter(Boolean);
     const result = await syncMobileProfileStatuses(ids);
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/multilogin/control-status") {
+    const result = await getPhoneControlStatus();
     sendJson(response, 200, result);
     return;
   }

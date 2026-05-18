@@ -54,7 +54,7 @@ Do not commit real Multilogin tokens.
 
 ## Current UI Behavior
 
-### Top Live Agent Panel
+### Top Active Now Panel
 
 Added in commit `241ba5b`.
 
@@ -69,6 +69,10 @@ Shows:
 - Auto-stop countdown
 - Last report or warning
 - Quick controls: Viewer, Open X app, Task, Needs attention, Stop
+- Phone Control capability split:
+  - Multilogin/xcli lifecycle controls: sync, start, viewer, stop, app install
+  - Android inside-phone controls: Open X app, Scroll review, Scroll 3x through ADB
+- Assistive Controller for the selected profile: open viewer, open X, scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
 
 Stopping a session from the overview marks the session stopped and cancels queued, running, and failed tasks for that session/profile. Stopping a Multilogin profile also closes active operator sessions for that profile and clears its queued work.
 
@@ -97,11 +101,12 @@ Current names and behavior:
 
 - `Start + View`: opens the visible Multilogin phone viewer and sets local 30-minute auto-stop tracking.
 - `Viewer`: opens the visible Multilogin phone viewer.
-- `Open X app`: launches the installed Android X app through ADB for the selected mobile cloud phone.
+- `Open X app`: launches the installed Android X app through ADB for the selected mobile cloud phone. The dashboard disables this when ADB is not connected and keeps Viewer available through Multilogin/xcli.
 - `Stop`: runs both mobile shutdown paths and sets local cooldown.
 - `Task`: queues a manual review prompt.
+- `Assistive Controller`: explicit accessibility commands only. Draft typing assists the operator with prepared text; it does not generate or submit public engagement by itself.
 
-Important: the dashboard does not control the computer with mouse/Accessibility permissions for X. App launch and scroll commands use ADB against the Android cloud phone.
+Important: Multilogin/xcli does not currently expose a documented command for launching one installed Android app or swiping inside the phone. The dashboard does not control the computer with mouse/Accessibility permissions for X. App launch and scroll commands use ADB against the Android cloud phone.
 
 ## Backend Routes To Know
 
