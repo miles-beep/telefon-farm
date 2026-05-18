@@ -11,6 +11,7 @@ function usage() {
   npm run mlx -- start <profile_id> [folder_id]
   npm run mlx -- stop <profile_id>
   npm run mlx -- open-x <profile_id>
+  npm run mlx -- scroll <profile_id> [count]
   npm run mlx -- install-x <profile_id>
   npm run mlx -- operator
   npm run mlx -- work <profile_id> [preset_id]
@@ -201,7 +202,23 @@ async function main() {
       body: JSON.stringify({
         profileType: "mobile",
         folderId: profile.folderId,
-        runUiMacro: command === "open-x"
+        runUiMacro: false
+      })
+    });
+    console.log(JSON.stringify(result.response?.payload || result.response || result, null, 2));
+    return;
+  }
+
+  if (command === "scroll") {
+    const [profileId, count = "1"] = args;
+    if (!profileId) throw new Error("Pass a profile_id to scroll.");
+    const profile = await resolveProfile(profileId);
+    const result = await request(`/api/multilogin/profiles/${encodeURIComponent(profileId)}/command`, {
+      method: "POST",
+      body: JSON.stringify({
+        profileType: "mobile",
+        folderId: profile.folderId,
+        command: Number(count) > 1 ? "scroll_3" : "scroll_prompt"
       })
     });
     console.log(JSON.stringify(result.response?.payload || result.response || result, null, 2));
@@ -243,8 +260,7 @@ async function main() {
         profileId: profile.id,
         profileName: profile.name,
         profileType: profile.profileType || "browser",
-        folderId: profile.folderId || "",
-        targetUrl: "https://x.com/home"
+        folderId: profile.folderId || ""
       })
     });
     if (command === "plan") {

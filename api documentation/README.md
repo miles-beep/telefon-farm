@@ -24,8 +24,8 @@ This folder contains local summarized Markdown references for the 14 help articl
 
 ## Local Dashboard Relevance
 
-- `Start + View`, `Viewer`, `Open Phone`, and `Stop` map to cloud phone lifecycle guidance.
+- `Start + View`, `Viewer`, `Open X app`, and `Stop` map to cloud phone lifecycle and ADB guidance.
 - `Live Agent` and the 30-minute local auto-stop timer map to auto-stop/minute-protection guidance.
 - `Install X` maps to mobile app library/install guidance.
-- Future reliable phone control should investigate ADB support rather than only macOS mouse gestures.
+- Reliable phone control uses ADB for Android app launch and feed scroll commands.
 - Admin/destructive actions such as transfer, folder merge, import/export, and bulk creation should stay out of the daily operator flow unless gated by confirmations.

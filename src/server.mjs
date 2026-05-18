@@ -26,9 +26,9 @@ import {
   getMultiloginMobileProfileStatuses,
   getMultiloginOverview,
   installMultiloginMobileXApp,
+  openAndroidXApp,
   openMultiloginMobileViewer,
-  openMultiloginMobileX,
-  scrollMultiloginMobilePhone,
+  scrollAndroidXApp,
   searchMultiloginProfiles,
   startMultiloginProfile,
   stopMultiloginMobileProfile,
@@ -196,10 +196,16 @@ async function executeOperatorTask(taskId) {
         ? await stopMultiloginMobileProfile({ profileId: task.profileId })
         : await stopMultiloginProfile({ profileId: task.profileId });
     completeOperatorTask(task.id, { message: "Profile stop requested.", request: result.request });
-  } else if (task.functionId === "scroll_prompt" && task.profileType === "mobile") {
-    result = await scrollMultiloginMobilePhone({ count: 1 });
+  } else if (task.functionId === "open_x_app" && task.profileType === "mobile") {
+    result = await openAndroidXApp({ profileId: task.profileId });
     completeOperatorTask(task.id, {
-      message: "Visible phone scroll gesture sent.",
+      message: "Android X app launch requested.",
+      request: result.request
+    });
+  } else if (task.functionId === "scroll_prompt" && task.profileType === "mobile") {
+    result = await scrollAndroidXApp({ profileId: task.profileId, count: 1 });
+    completeOperatorTask(task.id, {
+      message: "Android X app scroll sent.",
       request: result.request
     });
   }
@@ -223,12 +229,15 @@ async function executeManualMobileCommand(profileId, body = {}) {
   let result = null;
   let label = "";
 
-  if (command === "scroll" || command === "scroll_once") {
+  if (command === "open_x_app" || command === "open_x") {
+    label = "Open X app";
+    result = await openAndroidXApp({ profileId, adbSerial: body.adbSerial });
+  } else if (command === "scroll" || command === "scroll_once" || command === "scroll_prompt") {
     label = "Scroll";
-    result = await scrollMultiloginMobilePhone({ count: 1 });
+    result = await scrollAndroidXApp({ profileId, adbSerial: body.adbSerial, count: 1 });
   } else if (command === "scroll_3") {
     label = "Scroll 3x";
-    result = await scrollMultiloginMobilePhone({ count: 3 });
+    result = await scrollAndroidXApp({ profileId, adbSerial: body.adbSerial, count: 3 });
   } else {
     throw new Error(`Unsupported manual phone command: ${command}`);
   }
@@ -472,12 +481,18 @@ async function handleApi(request, response, url) {
 
     const startedSession = startOperatorSession(session.id);
     if (body.openX && startedSession.profileType === "mobile") {
-      openXResult = await openMultiloginMobileX({
-        profileId: startedSession.profileId,
-        groupId: body.groupId || body.folderId || startedSession.folderId,
-        ensureInstalled: body.ensureXInstalled === true,
-        runUiMacro: body.runUiMacro === true
-      });
+      try {
+        openXResult = await openAndroidXApp({ profileId: startedSession.profileId });
+      } catch (error) {
+        openXResult = { error: error.message };
+        updateOperatorProfileRecord(startedSession.profileId, {
+          profileName: startedSession.profileName,
+          profileType: "mobile",
+          folderId: startedSession.folderId,
+          status: "running",
+          issue: `X app launch failed: ${error.message}`
+        });
+      }
     }
 
     sendJson(response, 200, {
@@ -686,24 +701,17 @@ async function handleApi(request, response, url) {
     if (body.profileType !== "mobile") {
       throw new Error("Open X is only available for mobile cloud phone profiles.");
     }
-    const result = await openMultiloginMobileX({
-      profileId: segments[3],
-      groupId: body.groupId || body.folderId,
-      ensureInstalled: body.ensureInstalled === true,
-      runUiMacro: body.runUiMacro === true
-    });
+    const result = await openAndroidXApp({ profileId: segments[3], adbSerial: body.adbSerial });
     const verifiedStatus = await verifyMobileProfileStatus(segments[3]);
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
       profileType: "mobile",
       folderId: body.folderId,
       status: "running",
-      issue:
-        result.response?.payload?.macroWarning ||
-        result.response?.payload?.viewerWarning ||
-        result.response?.payload?.installWarning ||
-        "",
-      lastOpenedAt: new Date().toISOString(),
+      issue: "",
+      lastCommandAt: new Date().toISOString(),
+      lastCommand: "Open X app",
+      lastCommandResult: result.response?.payload?.message || "Android X app launch requested.",
       autoStopMinutes: 30
     });
     sendJson(response, 200, {

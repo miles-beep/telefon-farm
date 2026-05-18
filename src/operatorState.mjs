@@ -10,7 +10,7 @@ const statePath = path.resolve(process.env.TELEPHONES_STATE_PATH || defaultState
 const OPERATOR_FUNCTION_IDS = [
   "start_profile",
   "stop_profile",
-  "manual_x_review",
+  "open_x_app",
   "scroll_prompt",
   "open_post_prompt",
   "save_post_prompt",
@@ -53,52 +53,45 @@ const STATIC_FUNCTIONS = [
     mode: "control"
   },
   {
-    id: "manual_x_review",
-    label: "Open review workspace",
-    mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
-    promptDetail: "Open the profile viewer and prepare for manual review."
+    id: "open_x_app",
+    label: "Open X app",
+    mode: "control",
+    promptDetail: "Launch the installed Android X app on the mobile phone."
   },
   {
     id: "scroll_prompt",
     label: "Scroll review",
-    mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
-    promptDetail: "Scroll and read manually for the scheduled review window."
+    mode: "control",
+    promptDetail: "Foreground the Android X app, then scroll the feed for the scheduled review window."
   },
   {
     id: "open_post_prompt",
     label: "Open post review",
     mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
     promptDetail: "Open one post and decide what to do manually."
   },
   {
     id: "save_post_prompt",
     label: "Save review prompt",
     mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
     promptDetail: "If a post is useful, save it manually and record the result here."
   },
   {
     id: "like_post_prompt",
     label: "Like review prompt",
     mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
     promptDetail: "Review one post and like manually only if it is appropriate."
   },
   {
     id: "repost_prompt",
     label: "Repost review prompt",
     mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
     promptDetail: "Review one post and repost manually only if you choose."
   },
   {
     id: "comment_prompt",
     label: "Comment draft prompt",
     mode: "manual",
-    defaultTargetUrl: "https://x.com/home",
     promptDetail: "Draft one comment manually, then mark the result here."
   },
   {
@@ -233,6 +226,62 @@ function trim(value, fallback = "") {
   return text || fallback;
 }
 
+function isLegacyXHomeTarget(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, "");
+  const legacyHosts = new Set([["x", "com"].join("."), ["twitter", "com"].join(".")]);
+  try {
+    const parsed = new URL(normalized);
+    return legacyHosts.has(parsed.hostname) && parsed.pathname.replace(/\/+$/, "") === "/home";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeTargetUrl(value, fallback = "") {
+  const targetUrl = trim(value, fallback);
+  return isLegacyXHomeTarget(targetUrl) ? "" : targetUrl;
+}
+
+function normalizeFunctionId(functionId) {
+  return functionId === ["manual", "x", "review"].join("_") ? "open_x_app" : functionId;
+}
+
+function normalizePersistedTask(task) {
+  const functionId = normalizeFunctionId(task.functionId);
+  const fn = getFunction(functionId);
+  return {
+    ...task,
+    functionId,
+    functionLabel: fn?.label || task.functionLabel,
+    targetUrl: normalizeTargetUrl(task.targetUrl)
+  };
+}
+
+function normalizePersistedSession(session) {
+  return {
+    ...session,
+    targetUrl: normalizeTargetUrl(session.targetUrl),
+    currentPrompt: session.currentPrompt ? normalizePersistedTask(session.currentPrompt) : session.currentPrompt,
+    events: Array.isArray(session.events)
+      ? session.events.map((event) => ({
+          ...event,
+          functionId: normalizeFunctionId(event.functionId),
+          targetUrl: normalizeTargetUrl(event.targetUrl)
+        }))
+      : []
+  };
+}
+
+function normalizePersistedReviewItem(item) {
+  return {
+    ...item,
+    url: normalizeTargetUrl(item.url)
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -259,13 +308,19 @@ function loadPersistedState() {
 
   try {
     const persisted = JSON.parse(readFileSync(statePath, "utf8"));
-    operatorState.tasks = Array.isArray(persisted.tasks) ? persisted.tasks.slice(0, 250) : [];
-    operatorState.sessions = Array.isArray(persisted.sessions) ? persisted.sessions.slice(0, 120) : [];
+    operatorState.tasks = Array.isArray(persisted.tasks)
+      ? persisted.tasks.slice(0, 250).map(normalizePersistedTask)
+      : [];
+    operatorState.sessions = Array.isArray(persisted.sessions)
+      ? persisted.sessions.slice(0, 120).map(normalizePersistedSession)
+      : [];
     operatorState.profileRecords =
       persisted.profileRecords && typeof persisted.profileRecords === "object" && !Array.isArray(persisted.profileRecords)
         ? persisted.profileRecords
         : {};
-    operatorState.reviewItems = Array.isArray(persisted.reviewItems) ? persisted.reviewItems.slice(0, 250) : [];
+    operatorState.reviewItems = Array.isArray(persisted.reviewItems)
+      ? persisted.reviewItems.slice(0, 250).map(normalizePersistedReviewItem)
+      : [];
     operatorState.commentDrafts = Array.isArray(persisted.commentDrafts)
       ? persisted.commentDrafts.slice(0, 120)
       : [];
@@ -509,7 +564,7 @@ function createTaskRecord(payload = {}) {
     profileName: profile.profileName,
     profileType: profile.profileType,
     folderId: profile.folderId,
-    targetUrl: trim(payload.targetUrl, fn.defaultTargetUrl || ""),
+    targetUrl: normalizeTargetUrl(payload.targetUrl, fn.defaultTargetUrl || ""),
     notes: trim(payload.notes),
     delaySec: Number.isFinite(Number(payload.delaySec)) ? Math.max(0, Math.round(Number(payload.delaySec))) : 0,
     scheduledFor: trim(payload.scheduledFor),
@@ -538,7 +593,7 @@ function buildPromptFromAction({ preset, action, session, immediate = false }) {
     functionId: fn.id,
     label: fn.label,
     detail: fn.promptDetail || "Complete this local prompt manually.",
-    targetUrl: session.targetUrl || fn.defaultTargetUrl || "",
+    targetUrl: normalizeTargetUrl(session.targetUrl || fn.defaultTargetUrl || ""),
     notes: "",
     delaySec,
     scheduledFor: new Date(Date.now() + delaySec * 1000).toISOString(),
@@ -688,7 +743,7 @@ export function createOperatorPlan(payload = {}) {
 
   const preset = getPreset(payload.presetId);
   const operator = getOperator(payload.agentId || payload.operatorId);
-  const targetUrl = trim(payload.targetUrl, "https://x.com/home");
+  const targetUrl = normalizeTargetUrl(payload.targetUrl);
   const notes = trim(payload.notes);
   const tasks = [];
   let startTaskAdded = false;
@@ -717,7 +772,7 @@ export function createOperatorPlan(payload = {}) {
         ...profile,
         agentId: operator.id,
         functionId: fn.id,
-        targetUrl: targetUrl || fn.defaultTargetUrl,
+        targetUrl: normalizeTargetUrl(targetUrl || fn.defaultTargetUrl || ""),
         notes: notes || fn.promptDetail || "",
         delaySec: cursorSec,
         scheduledFor: new Date(Date.now() + cursorSec * 1000).toISOString()
@@ -788,6 +843,19 @@ export function completeOperatorTask(taskId, result = null) {
       cooldownMinutes: 60,
       autoStopAt: null,
       lastStoppedAt: iso()
+    });
+  }
+  if (["open_x_app", "scroll_prompt"].includes(task.functionId) && task.profileId) {
+    patchProfileRecord(task.profileId, {
+      profileName: task.profileName,
+      profileType: task.profileType,
+      folderId: task.folderId,
+      status: "running",
+      issue: "",
+      lastCommandAt: iso(),
+      lastCommand: task.functionLabel,
+      lastCommandResult: result?.message || `${task.functionLabel} completed.`,
+      autoStopMinutes: 30
     });
   }
   return task;
@@ -861,7 +929,7 @@ export function getProfilesDueForAutoStop(now = new Date()) {
 export function createReviewItem(payload = {}) {
   const profile = taskPayloadForProfile(payload);
   const note = trim(payload.note || payload.notes);
-  const url = trim(payload.url || payload.targetUrl, "https://x.com/home");
+  const url = normalizeTargetUrl(payload.url || payload.targetUrl);
   if (!profile.profileId) throw new Error("Select a profile for this review item.");
   if (!note && !url) throw new Error("Add a review URL or note.");
 
@@ -977,7 +1045,7 @@ export function prepareOperatorSession(payload = {}) {
     folderId: profile.folderId,
     presetId: preset.id,
     presetLabel: preset.label,
-    targetUrl: trim(payload.targetUrl, "https://x.com/home"),
+    targetUrl: normalizeTargetUrl(payload.targetUrl),
     notes: trim(payload.notes),
     status: "prepared",
     warnings: sessionWarningsFor(payload),

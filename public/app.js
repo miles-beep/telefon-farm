@@ -326,7 +326,7 @@ function renderMlxProfileCard(profile, compact = false) {
                   data-profile-name="${escapeHtml(profile.name || "")}"
                   data-folder-id="${escapeHtml(profile.folderId)}"
                   data-profile-type="mobile"
-                >Open Phone</button>`
+                >Open X app</button>`
               : ""
           }
           <button
@@ -678,7 +678,8 @@ function renderManualCommandControls(profile) {
   return `
     <div class="manual-command" data-profile-id="${escapeHtml(profile.id)}">
       <select class="manual-command-select" aria-label="Manual phone command">
-        <option value="scroll">Scroll</option>
+        <option value="open_x_app">Open X app</option>
+        <option value="scroll_prompt">Scroll review</option>
         <option value="scroll_3">Scroll 3x</option>
       </select>
       <button
@@ -1037,7 +1038,7 @@ function renderPriorityBoard() {
             <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Start + View</button>
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open Phone</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open X app</button>`
                 : ""
             }
             ${
@@ -1123,7 +1124,7 @@ function renderLiveAgentBoard() {
             }
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open Phone</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile">Open X app</button>`
                 : ""
             }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
@@ -1204,7 +1205,7 @@ function renderReviewQueue() {
           </header>
           <p>${escapeHtml(item.note || "Review this item manually.")}</p>
           <div class="operator-task-meta">
-            <span>${escapeHtml(item.url || "https://x.com/home")}</span>
+            <span>${escapeHtml(item.url || "No reference")}</span>
           </div>
           <footer>
             <button class="secondary review-open-item" type="button" data-review-id="${escapeHtml(item.id)}">Open</button>
@@ -1475,7 +1476,7 @@ function sessionPayload(profile) {
     profileName: profile.name,
     profileType: profile.profileType || "browser",
     folderId: profile.folderId || "",
-    targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
+    targetUrl: nodes.sessionTargetUrl.value,
     notes: nodes.sessionNotes.value,
     openX: profile.profileType === "mobile",
     runUiMacro: false
@@ -1505,7 +1506,11 @@ async function startWorkForProfile(profile, { message = "Work session started." 
   operatorState = result.snapshot;
   render();
   await loadMultiloginProfiles({ quiet: true });
-  if (message) showToast(message);
+  if (result.openXResult?.error) {
+    showToast(`Started, but Open X app failed: ${result.openXResult.error}`);
+  } else if (message) {
+    showToast(message);
+  }
   return result;
 }
 
@@ -1550,7 +1555,7 @@ async function openViewerControl(profile, { message = "Opened Multilogin viewer.
   return result;
 }
 
-async function openXControl(profile, { message = "Opened phone. Tap X manually." } = {}) {
+async function openXControl(profile, { message = "Opened Android X app." } = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
     method: "POST",
@@ -1564,7 +1569,7 @@ async function openXControl(profile, { message = "Opened phone. Tap X manually."
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
   const warning = result.response?.payload?.viewerWarning || result.response?.payload?.macroWarning || result.response?.payload?.installWarning;
-  showToast(warning ? "Phone opened with Multilogin warning. Check Live Agent." : message);
+  showToast(warning ? "X app launch returned a warning. Check Live Agent." : message);
   return result;
 }
 
@@ -1620,7 +1625,7 @@ async function queueRandomPlan(profileId) {
         profileName: profile.name,
         profileType: profile.profileType || "browser",
         folderId: profile.folderId || "",
-        targetUrl: nodes.operatorTargetUrl.value || nodes.sessionTargetUrl.value || "https://x.com/home",
+        targetUrl: nodes.operatorTargetUrl.value || nodes.sessionTargetUrl.value,
         notes: nodes.operatorNotes.value || nodes.sessionNotes.value
       })
     });
@@ -1947,7 +1952,7 @@ nodes.reviewItemForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         ...selectedProfilePatch(profile),
         profileId: profile?.id || "",
-        url: nodes.reviewItemUrl.value || nodes.sessionTargetUrl.value || "https://x.com/home",
+        url: nodes.reviewItemUrl.value || nodes.sessionTargetUrl.value,
         note: nodes.reviewItemNote.value,
         source: "dashboard"
       })
@@ -2157,10 +2162,10 @@ document.addEventListener("click", async (event) => {
   if (queueReviewButton) {
     try {
       await queueOperatorTask({
-        functionId: "manual_x_review",
+        functionId: "open_x_app",
         profileId: queueReviewButton.dataset.profileId,
-        targetUrl: "https://x.com/home",
-        notes: "Review session"
+        targetUrl: "",
+        notes: "Open X app for review"
       });
     } catch (error) {
       showToast(error.message);
@@ -2199,7 +2204,7 @@ document.addEventListener("click", async (event) => {
       showToast("Sync the review profile first.");
     } else {
       try {
-        nodes.sessionTargetUrl.value = item.url || "https://x.com/home";
+        nodes.sessionTargetUrl.value = item.url || "";
         nodes.sessionNotes.value = item.note || nodes.sessionNotes.value;
         await startWorkForProfile(profile, { message: "Review profile opened." });
       } catch (error) {
@@ -2285,10 +2290,10 @@ document.addEventListener("click", async (event) => {
   if (priorityQueueButton) {
     try {
       await queueOperatorTask({
-        functionId: "manual_x_review",
+        functionId: "open_x_app",
         profileId: priorityQueueButton.dataset.profileId,
-        targetUrl: nodes.sessionTargetUrl.value || "https://x.com/home",
-        notes: "Priority board task"
+        targetUrl: nodes.sessionTargetUrl.value,
+        notes: "Open X app from priority board"
       });
     } catch (error) {
       showToast(error.message);

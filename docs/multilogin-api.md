@@ -41,6 +41,9 @@ MULTILOGIN_CLOUD_BASE_URL="https://api.multilogin.com"
 MULTILOGIN_LAUNCHER_BASE_URL="https://launcher.mlx.yt:45001"
 MULTILOGIN_XCLI_PATH="~/mlx/deps/cli/xcli"
 MULTILOGIN_TIMEOUT_MS=8000
+ADB_PATH="/path/to/adb"
+MULTILOGIN_ADB_SERIALS="profile_id=ip:port"
+MULTILOGIN_X_ANDROID_PACKAGE="com.twitter.android"
 ```
 
 The default launcher URL uses local port `45001`, matching the local launcher/agent style documented by Multilogin. Mobile cloud phones are read through the local Multilogin CLI (`xcli`) because they are separate from the browser-profile `POST /profile/search` response. If the desktop app or agent cannot be reached, first confirm local network access for `127.0.0.1` and that the Multilogin desktop app or agent is running.
@@ -87,13 +90,16 @@ Example body:
 - Mobile cloud phone stop: `xcli mobile-phone-shutdown --ids <profile_id>` and `xcli mobile-profiles-phone-stop --ids <profile_id>`
 - Mobile cloud phone visible viewer: `xcli mobile-phone-launch --ids <profile_id>`
 - Mobile X app install: `xcli mobile-profiles-app-install --id <app_id> --version_id <version_id> --install_group_ids <group_id>`
-- Manual visible phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "scroll"` or `command: "scroll_3"`
+- Android X app launch: `adb shell monkey -p com.twitter.android -c android.intent.category.LAUNCHER 1`
+- Manual Android phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "open_x_app"`, `command: "scroll_prompt"`, or `command: "scroll_3"`
 
 Mobile cloud-phone sync can still work without `MULTILOGIN_TOKEN` as long as local `xcli` is logged in and the Multilogin agent/launcher is running. Browser profile cloud API calls still require the token.
 
+ADB command routing uses the single connected Android device by default. If multiple phones are connected, set `MULTILOGIN_ADB_SERIAL_<profile_id>`, `MULTILOGIN_ADB_SERIAL`, or `MULTILOGIN_ADB_SERIALS="profile_id=ip:port"`.
+
 ## Explicitly Not Implemented
 
-- Real social-platform scrolling, liking, saving, commenting, or reposting
+- Automated liking, saving, commenting, reposting, following, or hidden engagement loops
 - Quick profile creation
 - Profile create/update/remove/clone/move/restore
 - Proxy generation, validation, or assignment

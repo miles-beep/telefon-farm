@@ -11,10 +11,8 @@ const DEFAULT_CLOUD_BASE_URL = "https://api.multilogin.com";
 const DEFAULT_LAUNCHER_BASE_URL = "https://launcher.mlx.yt:45001";
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MOBILE_X_JXA_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.jxa");
-const MOBILE_X_SWIFT_MACRO_PATH = path.resolve(__dirname, "../scripts/open-mobile-x.swift");
-const MOBILE_SCROLL_MACRO_PATH = path.resolve(__dirname, "../scripts/scroll-mobile-phone.jxa");
 const DEFAULT_X_APP_ID = "1556606452280463360";
+const DEFAULT_X_ANDROID_PACKAGE = "com.twitter.android";
 let localEnvLoaded = false;
 
 const READ_ONLY_OPERATIONS = {
@@ -416,6 +414,107 @@ async function runXcli(args, env = process.env) {
   }
 }
 
+function getAdbConfig(env = process.env) {
+  loadLocalEnv(env);
+  return {
+    adbPath: normalizeFilePath(env.ADB_PATH || env.MULTILOGIN_ADB_PATH, "adb"),
+    timeoutMs: Number(env.MULTILOGIN_ADB_TIMEOUT_MS || 12000),
+    xPackageName: String(env.X_ANDROID_PACKAGE || env.MULTILOGIN_X_ANDROID_PACKAGE || DEFAULT_X_ANDROID_PACKAGE).trim()
+  };
+}
+
+function envKeyForProfileAdbSerial(profileId) {
+  return `MULTILOGIN_ADB_SERIAL_${String(profileId || "").replace(/[^A-Za-z0-9]/g, "_")}`;
+}
+
+function parseAdbSerialMappings(value) {
+  const mappings = new Map();
+  for (const entry of String(value || "").split(/[,\n;]/)) {
+    const index = entry.indexOf("=");
+    if (index <= 0) continue;
+    const profileId = entry.slice(0, index).trim();
+    const serial = entry.slice(index + 1).trim();
+    if (profileId && serial) mappings.set(profileId, serial);
+  }
+  return mappings;
+}
+
+async function runAdb(args, env = process.env) {
+  const config = getAdbConfig(env);
+
+  try {
+    const { stdout, stderr } = await execFileAsync(config.adbPath, args, {
+      timeout: config.timeoutMs,
+      maxBuffer: 1024 * 1024
+    });
+    return String(stdout || stderr || "").trim();
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error("ADB was not found. Install Android platform-tools or set ADB_PATH.");
+    }
+    const output = String(`${error.stdout || ""}\n${error.stderr || ""}`).trim();
+    const message = String(output || error.message || "adb command failed").split("\n").find(Boolean);
+    throw new Error(`ADB failed: ${message}`);
+  }
+}
+
+async function listConnectedAdbDevices(env = process.env) {
+  const stdout = await runAdb(["devices"], env);
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .map((line) => line.match(/^(\S+)\s+device$/)?.[1] || "")
+    .filter(Boolean);
+}
+
+async function resolveAdbSerial({ profileId, adbSerial } = {}, env = process.env) {
+  const directSerial = String(adbSerial || "").trim();
+  if (directSerial) return directSerial;
+
+  loadLocalEnv(env);
+  const profileSerial = String(env[envKeyForProfileAdbSerial(profileId)] || "").trim();
+  if (profileSerial) return profileSerial;
+
+  const mappings = parseAdbSerialMappings(env.MULTILOGIN_ADB_SERIALS);
+  const mappedSerial = mappings.get(String(profileId || ""));
+  if (mappedSerial) return mappedSerial;
+
+  const defaultSerial = String(env.MULTILOGIN_ADB_SERIAL || "").trim();
+  if (defaultSerial) return defaultSerial;
+
+  const devices = await listConnectedAdbDevices(env);
+  if (devices.length === 1) return devices[0];
+  if (devices.length > 1) {
+    throw new Error(
+      `Multiple ADB devices are connected. Set ${envKeyForProfileAdbSerial(profileId)} or MULTILOGIN_ADB_SERIALS to map this profile.`
+    );
+  }
+
+  throw new Error("No ADB device is connected. Enable ADB for the running Multilogin cloud phone, run adb connect, and authenticate it.");
+}
+
+async function runAdbShell({ profileId, adbSerial, shellArgs } = {}, env = process.env) {
+  const serial = await resolveAdbSerial({ profileId, adbSerial }, env);
+  const output = await runAdb(["-s", serial, "shell", ...shellArgs.map(String)], env);
+  return { serial, output };
+}
+
+function parseAndroidScreenSize(value) {
+  const match = String(value || "").match(/Physical size:\s*(\d+)x(\d+)/i) || String(value || "").match(/(\d+)x(\d+)/);
+  return {
+    width: Number(match?.[1] || 1080),
+    height: Number(match?.[2] || 1920)
+  };
+}
+
+async function getAndroidScreenSize({ profileId, adbSerial } = {}, env = process.env) {
+  const result = await runAdbShell({ profileId, adbSerial, shellArgs: ["wm", "size"] }, env);
+  return {
+    serial: result.serial,
+    ...parseAndroidScreenSize(result.output)
+  };
+}
+
 function isSoftMobileCliError(error) {
   return /unexpected response|failed to get profiles starting urls|starting urls|failed to start mobile profiles|internal server error/i.test(
     String(error?.message || error || "")
@@ -779,162 +878,105 @@ export async function installMultiloginMobileXApp({ groupId } = {}, env = proces
   };
 }
 
-async function runMobileXUiMacro({ profileId } = {}, env = process.env) {
-  if (process.platform !== "darwin") {
-    throw new Error("The mobile X opener macro is only available on macOS.");
-  }
-
-  const timeout = Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000);
-  const macro =
-    existsSync(MOBILE_X_JXA_MACRO_PATH)
-      ? {
-          command: "/usr/bin/osascript",
-          args: ["-l", "JavaScript", MOBILE_X_JXA_MACRO_PATH, String(profileId || "")],
-          method: "osascript",
-          path: "scripts/open-mobile-x.jxa"
-        }
-      : existsSync(MOBILE_X_SWIFT_MACRO_PATH)
-        ? {
-            command: "/usr/bin/swift",
-            args: [MOBILE_X_SWIFT_MACRO_PATH, String(profileId || "")],
-            method: "swift",
-            path: "scripts/open-mobile-x.swift"
-          }
-        : null;
-
-  if (!macro) {
-    throw new Error(`Mobile X opener macro was not found at ${MOBILE_X_JXA_MACRO_PATH}.`);
-  }
-
-  const { stdout } = await execFileAsync(macro.command, macro.args, {
-    timeout,
-    maxBuffer: 256 * 1024
-  });
-
-  return {
-    requestedAt: new Date().toISOString(),
-    request: {
-      label: "Open X with local macOS UI macro",
-      method: macro.method,
-      base: "local",
-      path: macro.path
-    },
-    response: {
-      ok: true,
-      httpStatus: 200,
-      statusText: "OK",
-      payload: { message: "Mobile X opener macro completed." }
-    },
-    output: stdout.trim() || "ok"
-  };
-}
-
-function friendlyMacroError(error) {
-  const message = String(error?.message || error || "Mobile X opener macro failed.");
-  if (/Accessibility permission is required/i.test(message)) {
-    return "This action needs macOS Accessibility permission for osascript or your terminal.";
-  }
-  return message.split("\n").find((line) => line.trim()) || "Mobile X opener macro failed.";
-}
-
-export async function scrollMultiloginMobilePhone({ count = 1 } = {}, env = process.env) {
-  if (process.platform !== "darwin") {
-    throw new Error("Mobile phone scrolling is only available on macOS.");
-  }
-  if (!existsSync(MOBILE_SCROLL_MACRO_PATH)) {
-    throw new Error(`Mobile phone scroll macro was not found at ${MOBILE_SCROLL_MACRO_PATH}.`);
-  }
-
-  const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
-  let stdout = "";
-  try {
-    const result = await execFileAsync("/usr/bin/osascript", ["-l", "JavaScript", MOBILE_SCROLL_MACRO_PATH, String(scrollCount)], {
-      timeout: Number(env.MULTILOGIN_UI_MACRO_TIMEOUT_MS || 12000),
-      maxBuffer: 256 * 1024
-    });
-    stdout = result.stdout;
-  } catch (error) {
-    throw new Error(friendlyMacroError(error));
-  }
-
-  return {
-    requestedAt: new Date().toISOString(),
-    request: {
-      label: "Scroll visible mobile phone",
-      method: "osascript",
-      base: "local",
-      path: "scripts/scroll-mobile-phone.jxa"
-    },
-    response: {
-      ok: true,
-      httpStatus: 200,
-      statusText: "OK",
-      payload: { message: `Sent ${scrollCount} visible phone scroll gesture${scrollCount === 1 ? "" : "s"}.` }
-    },
-    output: stdout.trim() || "ok"
-  };
-}
-
-export async function openMultiloginMobileX({ profileId, groupId, ensureInstalled = false, runUiMacro = false } = {}, env = process.env) {
+export async function openAndroidXApp({ profileId, adbSerial, packageName } = {}, env = process.env) {
   if (!profileId) {
     throw new Error("Opening X on a Multilogin mobile profile requires profileId.");
   }
 
-  let installResult = null;
-  let installWarning = null;
-  if (ensureInstalled) {
-    try {
-      installResult = await installMultiloginMobileXApp({ groupId }, env);
-    } catch (error) {
-      installWarning = error.message;
-    }
+  const config = getAdbConfig(env);
+  const androidPackage = String(packageName || config.xPackageName || DEFAULT_X_ANDROID_PACKAGE).trim();
+  const { serial, output } = await runAdbShell(
+    {
+      profileId,
+      adbSerial,
+      shellArgs: ["monkey", "-p", androidPackage, "-c", "android.intent.category.LAUNCHER", "1"]
+    },
+    env
+  );
+
+  return {
+    requestedAt: new Date().toISOString(),
+    request: {
+      label: "Open Android X app",
+      method: "adb",
+      base: "local",
+      path: `adb -s ${serial} shell monkey -p ${androidPackage} -c android.intent.category.LAUNCHER 1`
+    },
+    response: {
+      ok: true,
+      httpStatus: 200,
+      statusText: "OK",
+      payload: {
+        message: `Android X app launch requested on ${serial}.`,
+        packageName: androidPackage,
+        adbSerial: serial
+      }
+    },
+    output: output || "ok"
+  };
+}
+
+export async function scrollAndroidXApp({ profileId, adbSerial, count = 1, packageName } = {}, env = process.env) {
+  if (!profileId) {
+    throw new Error("Scrolling X on a Multilogin mobile profile requires profileId.");
   }
 
-  const viewerResult = await openMultiloginMobileViewer({ profileId }, env);
-  let macroResult = null;
-  let macroWarning = null;
-  const viewerWarning = viewerResult.response?.payload?.launchWarning || null;
+  const openResult = await openAndroidXApp({ profileId, adbSerial, packageName }, env);
+  const scrollCount = Math.max(1, Math.min(8, Number(count || 1)));
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_APP_FOCUS_DELAY_MS || 800)));
 
-  if (runUiMacro) {
-    await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_UI_MACRO_DELAY_MS || 1800)));
-    try {
-      macroResult = await runMobileXUiMacro({ profileId }, env);
-    } catch (error) {
-      macroWarning = friendlyMacroError(error);
+  const size = await getAndroidScreenSize({ profileId, adbSerial: openResult.response.payload.adbSerial }, env);
+  const x = Math.round(size.width * 0.5);
+  const startY = Math.round(size.height * 0.78);
+  const endY = Math.round(size.height * 0.28);
+  const durationMs = Number(env.MULTILOGIN_ADB_SWIPE_DURATION_MS || 450);
+  const swipes = [];
+
+  for (let index = 0; index < scrollCount; index += 1) {
+    const swipe = await runAdbShell(
+      {
+        profileId,
+        adbSerial: size.serial,
+        shellArgs: ["input", "swipe", x, startY, x, endY, durationMs]
+      },
+      env
+    );
+    swipes.push(swipe.output || "ok");
+    if (index < scrollCount - 1) {
+      await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_SCROLL_PAUSE_MS || 500)));
     }
   }
 
   return {
     requestedAt: new Date().toISOString(),
     request: {
-      label: "Open mobile profile to X",
-      method: runUiMacro ? "xcli+macro" : "xcli",
+      label: "Scroll Android X app",
+      method: "adb",
       base: "local",
-      path: runUiMacro ? "mobile-phone-launch + scripts/open-mobile-x.jxa" : "mobile-phone-launch"
+      path: "adb shell monkey + input swipe"
     },
     response: {
-      ok: !macroWarning && !viewerWarning,
-      httpStatus: macroWarning || viewerWarning ? 207 : 200,
-      statusText: macroWarning || viewerWarning ? "Partial" : "OK",
+      ok: true,
+      httpStatus: 200,
+      statusText: "OK",
       payload: {
-        message: macroWarning || viewerWarning
-          ? "Viewer/Open X was requested, but Multilogin did not return a clean confirmation."
-          : runUiMacro
-            ? "Viewer opened and X opener macro completed."
-            : "Viewer opened. Tap X manually inside the phone.",
-        viewerWarning,
-        installWarning,
-        macroWarning,
-        manualActionRequired: !runUiMacro
+        message: `Opened Android X app and sent ${scrollCount} feed scroll${scrollCount === 1 ? "" : "s"} on ${size.serial}.`,
+        adbSerial: size.serial,
+        swipes: scrollCount,
+        screen: {
+          width: size.width,
+          height: size.height
+        }
       }
     },
-    viewerResult,
-    installResult,
-    macroResult,
-    viewerWarning,
-    installWarning,
-    macroWarning
+    openResult,
+    swipes,
+    output: "ok"
   };
+}
+
+export async function openMultiloginMobileX(options = {}, env = process.env) {
+  return openAndroidXApp(options, env);
 }
 
 export async function stopMultiloginMobileProfile({ profileId } = {}, env = process.env) {

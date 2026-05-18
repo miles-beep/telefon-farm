@@ -2,7 +2,7 @@
 
 A local Multilogin profile dashboard. It connects to your Multilogin browser profiles and mobile cloud phones, shows them without seeded fake data, and lets you start or stop profiles from the dashboard or terminal.
 
-The app intentionally stays local. It does not automate real social platforms, evade bans, or perform real likes, comments, saves, reposts, scrolling, proxy changes, cookie imports, or profile mutation.
+The app intentionally stays local. It does not automate likes, comments, saves, reposts, follows, proxy changes, cookie imports, or profile mutation. Phone app launch and feed scrolling are explicit operator commands only.
 
 ## Run
 
@@ -39,9 +39,9 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Dashboard controls to start and stop Multilogin profiles
 - Mobile cloud-phone **Start + View** opens the visible Multilogin phone window so the session can be tested directly
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
-- Mobile cloud-phone **Open Phone** opens the viewer without requesting macOS Accessibility control; tap X manually inside the phone
+- Mobile cloud-phone **Open X app** launches the installed Android X app through ADB when the cloud phone is connected
 - Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`
-- A local `osascript` click macro exists for opt-in terminal experiments only, but the dashboard does not request computer-control permissions
+- Android app launch and scroll commands use ADB against the selected cloud phone
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
@@ -59,12 +59,12 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 3. Use **Sync Profiles** in the Multilogin panel.
 4. In **Profile Console**, select a profile and preset.
 5. Click **Start Work** to prepare the profile, run the start task, and begin the session runner.
-6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile and open the visible phone.
+6. Use **Open Next Ready Profile** when you want the dashboard to pick the next ready mobile profile, open the viewer, and foreground the Android X app when ADB is connected.
 7. Use **Done**, **Skip**, or **Needs attention** when the random timer releases the next prompt.
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** or **Open Phone** for mobile profiles when you want to watch the phone. The **Live Agent** strip will show active profiles and the latest report.
+11. Use **Viewer** to watch the phone, or **Open X app** to foreground the installed Android X app through ADB. The **Live Agent** strip will show active profiles and the latest report.
 12. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.
@@ -84,6 +84,7 @@ MULTILOGIN_ENABLED=true MULTILOGIN_TOKEN="your_token" npm start
 ```
 
 See `docs/multilogin-api.md` for the implemented endpoint list and boundaries.
+For Android app commands, enable ADB on the running cloud phone and map it with `MULTILOGIN_ADB_SERIALS` if more than one device is connected.
 
 ## Terminal Control
 
@@ -93,6 +94,7 @@ npm run mlx -- profiles
 npm run mlx -- start <profile_id>
 npm run mlx -- stop <profile_id>
 npm run mlx -- open-x <mobile_profile_id>
+npm run mlx -- scroll <mobile_profile_id>
 npm run mlx -- install-x <mobile_profile_id>
 npm run mlx -- operator
 npm run mlx -- work <profile_id> review_mode

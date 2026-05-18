@@ -65,7 +65,7 @@ Shows:
 - Local running/starting/stopping state
 - Auto-stop countdown
 - Last report or warning
-- Quick controls: Viewer, Open Phone, Task, Needs attention, Stop
+- Quick controls: Viewer, Open X app, Task, Needs attention, Stop
 
 Live polling:
 
@@ -92,11 +92,11 @@ Current names and behavior:
 
 - `Start + View`: opens the visible Multilogin phone viewer and sets local 30-minute auto-stop tracking.
 - `Viewer`: opens the visible Multilogin phone viewer.
-- `Open Phone`: opens the visible phone only. It does not request macOS Accessibility permission and does not auto-click X.
+- `Open X app`: launches the installed Android X app through ADB for the selected mobile cloud phone.
 - `Stop`: runs both mobile shutdown paths and sets local cooldown.
 - `Task`: queues a manual review prompt.
 
-Important: the dashboard intentionally does not control the computer with Accessibility permissions. When the phone opens, tap X manually inside the phone.
+Important: the dashboard does not control the computer with mouse/Accessibility permissions for X. App launch and scroll commands use ADB against the Android cloud phone.
 
 ## Backend Routes To Know
 
@@ -116,12 +116,12 @@ Note: `/open-x` currently means "open the phone for manual X access" unless a ca
 
 ## Files Changed Recently
 
-- `public/index.html`: added the Live Agent panel and renamed the session button to Open Phone.
-- `public/app.js`: Live Agent rendering, status polling, safer profile button data, visible mobile start flow, Open Phone behavior.
+- `public/index.html`: added the Live Agent panel and Android app command controls.
+- `public/app.js`: Live Agent rendering, status polling, safer profile button data, visible mobile start flow, Open X app behavior.
 - `public/styles.css`: Live Agent layout and status styling.
 - `src/server.mjs`: visible mobile start behavior, mobile status sync endpoint, route hardening.
-- `src/multiloginClient.mjs`: soft mobile CLI errors, optional macro support, manual Open Phone default.
-- `scripts/open-mobile-x.jxa`: optional local macro experiment. Not used by the dashboard unless `runUiMacro: true`.
+- `src/multiloginClient.mjs`: soft mobile CLI errors, Android X app launch, and ADB-backed scroll commands.
+- ADB command path: Android X app launch and feed scrolling run through Android device commands, not browser URLs.
 - `README.md`: updated current workflow.
 
 ## Known Multilogin Issues Seen During Testing
@@ -170,7 +170,7 @@ Avoid:
 
 ## Next Useful Improvements
 
-1. Fix stale doc wording in `docs/operator-console.md`; it still mentions the old Accessibility macro flow.
+1. Add a dashboard field/panel for per-profile ADB serial mapping.
 2. Add a clearer Live Agent event timeline with entries like "viewer requested", "Multilogin warning", "manual task queued", "stopped".
 3. Add a "Refresh status now" button in Live Agent.
 4. Add per-profile auto-stop countdown as an actual ticking timer, not only relative text refreshed by polling.
@@ -181,7 +181,7 @@ Avoid:
    - `xcli missing`
 6. Add a "session done report" form directly in the Live Agent card.
 7. Add a small backend test script that checks all local routes without starting real profiles.
-8. Consider a dedicated "Phone opened but X not open" state, since Open Phone is now intentionally manual.
+8. Add a dedicated ADB connection panel so each active phone shows the exact Android device serial it is mapped to.
 
 ## Last Verification
 
