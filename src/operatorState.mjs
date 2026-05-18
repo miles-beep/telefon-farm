@@ -164,6 +164,7 @@ const STATIC_PRESETS = [
 ];
 
 const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const CANCELLABLE_TASK_STATUSES = new Set(["queued", "running", "failed"]);
 const ACTIVE_SESSION_STATUSES = new Set(["prepared", "running", "needs_attention"]);
 const PROFILE_STATUSES = new Set([
   "ready",
@@ -811,6 +812,36 @@ export function updateOperatorTask(taskId, patch = {}) {
   return task;
 }
 
+export function cancelOperatorTasksForScope(scope = {}, options = {}) {
+  const profileId = trim(scope.profileId);
+  const sessionId = trim(scope.sessionId);
+  const agentId = trim(scope.agentId || scope.operatorId);
+  const excludedTaskIds = new Set((scope.excludeTaskIds || []).map((taskId) => trim(taskId)).filter(Boolean));
+  const reason = trim(scope.reason || options.reason, "Work stopped.");
+  const now = iso();
+  const cancelledTasks = [];
+
+  for (const task of operatorState.tasks) {
+    if (excludedTaskIds.has(task.id)) continue;
+    if (!CANCELLABLE_TASK_STATUSES.has(task.status)) continue;
+
+    const matchesProfile = profileId && task.profileId === profileId;
+    const matchesSession = sessionId && task.sessionId === sessionId;
+    const matchesAgent = agentId && (task.agentId === agentId || task.operatorId === agentId);
+    if (!matchesProfile && !matchesSession && !matchesAgent) continue;
+
+    task.status = "cancelled";
+    task.error = null;
+    task.result = { message: reason };
+    task.completedAt = now;
+    task.updatedAt = now;
+    cancelledTasks.push(task);
+  }
+
+  if (cancelledTasks.length && options.save !== false) savePersistedState();
+  return cancelledTasks;
+}
+
 export function markOperatorTaskRunning(taskId) {
   const task = getOperatorTask(taskId);
   if (!task) throw new Error("Operator task not found.");
@@ -821,6 +852,9 @@ export function markOperatorTaskRunning(taskId) {
 }
 
 export function completeOperatorTask(taskId, result = null) {
+  const existingTask = getOperatorTask(taskId);
+  if (!existingTask || existingTask.status === "cancelled") return existingTask;
+
   const task = updateOperatorTask(taskId, { status: "completed", result, error: null });
   if (task.functionId === "start_profile" && task.profileId) {
     patchProfileRecord(task.profileId, {
@@ -844,6 +878,10 @@ export function completeOperatorTask(taskId, result = null) {
       autoStopAt: null,
       lastStoppedAt: iso()
     });
+    stopOperatorSessionsForProfile(task.profileId, {
+      reason: "Profile stop task completed.",
+      excludeTaskIds: [task.id]
+    });
   }
   if (["open_x_app", "scroll_prompt"].includes(task.functionId) && task.profileId) {
     patchProfileRecord(task.profileId, {
@@ -862,6 +900,9 @@ export function completeOperatorTask(taskId, result = null) {
 }
 
 export function failOperatorTask(taskId, error) {
+  const existingTask = getOperatorTask(taskId);
+  if (!existingTask || existingTask.status === "cancelled") return existingTask;
+
   const task = updateOperatorTask(taskId, { status: "failed", error: String(error || "Task failed.") });
   if (task.profileId) {
     patchProfileRecord(task.profileId, {
@@ -1183,30 +1224,92 @@ export function recordOperatorPromptOutcome(sessionId, payload = {}) {
   return session;
 }
 
-export function stopOperatorSession(sessionId, payload = {}) {
-  const session = getOperatorSession(sessionId);
-  if (!session) throw new Error("Session not found.");
+export function stopOperatorSessionsForProfile(profileId, payload = {}) {
+  const normalizedProfileId = trim(profileId);
+  if (!normalizedProfileId) return { sessions: [], cancelledTasks: [] };
 
+  const reason = trim(payload.reason || payload.notes, "Profile stopped.");
+  const cancelledTasks = cancelOperatorTasksForScope(
+    {
+      profileId: normalizedProfileId,
+      excludeTaskIds: payload.excludeTaskIds || [],
+      reason
+    },
+    { save: false }
+  );
   const now = iso();
-  if (trim(payload.notes)) {
+  const sessions = [];
+
+  for (const session of operatorState.sessions) {
+    if (session.profileId !== normalizedProfileId || !ACTIVE_SESSION_STATUSES.has(session.status)) continue;
+
     session.events.unshift({
       id: id("event"),
       sessionId: session.id,
       label: "Session stopped",
       functionId: "note",
       outcome: "stopped",
-      notes: trim(payload.notes),
+      notes: `${reason} ${cancelledTasks.length} task${cancelledTasks.length === 1 ? "" : "s"} cancelled.`,
       targetUrl: session.targetUrl,
       scheduledFor: "",
       createdAt: now
     });
+    session.events = session.events.slice(0, 80);
+    session.status = "stopped";
+    session.currentPrompt = null;
+    session.nextPromptAt = null;
+    session.stoppedAt = now;
+    session.updatedAt = now;
+    session.cleanup = {
+      reason,
+      cancelledTaskCount: cancelledTasks.length,
+      at: now
+    };
+    sessions.push(session);
   }
+
+  if (sessions.length || cancelledTasks.length) savePersistedState();
+  return { sessions, cancelledTasks };
+}
+
+export function stopOperatorSession(sessionId, payload = {}) {
+  const session = getOperatorSession(sessionId);
+  if (!session) throw new Error("Session not found.");
+
+  const now = iso();
+  const reason = trim(payload.notes, "Session stopped.");
+  const cancelledTasks = cancelOperatorTasksForScope(
+    {
+      profileId: session.profileId,
+      sessionId: session.id,
+      reason
+    },
+    { save: false }
+  );
+
+  session.events.unshift({
+    id: id("event"),
+    sessionId: session.id,
+    label: "Session stopped",
+    functionId: "note",
+    outcome: "stopped",
+    notes: `${reason} ${cancelledTasks.length} task${cancelledTasks.length === 1 ? "" : "s"} cancelled.`,
+    targetUrl: session.targetUrl,
+    scheduledFor: "",
+    createdAt: now
+  });
+  session.events = session.events.slice(0, 80);
 
   session.status = "stopped";
   session.currentPrompt = null;
   session.nextPromptAt = null;
   session.stoppedAt = now;
   session.updatedAt = now;
+  session.cleanup = {
+    reason,
+    cancelledTaskCount: cancelledTasks.length,
+    at: now
+  };
   patchProfileRecord(
     session.profileId,
     {

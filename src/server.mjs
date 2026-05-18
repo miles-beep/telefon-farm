@@ -51,6 +51,7 @@ import {
   reconcileOperatorProfiles,
   startOperatorSession,
   stopOperatorSession,
+  stopOperatorSessionsForProfile,
   updateCommentDraft,
   updateOperatorProfileRecord,
   updateOperatorTask,
@@ -115,6 +116,9 @@ async function stopProfileForRecord(record, reason) {
     } else {
       await stopMultiloginProfile({ profileId });
     }
+    stopOperatorSessionsForProfile(profileId, {
+      reason
+    });
     updateOperatorProfileRecord(profileId, {
       profileName: record.profileName,
       profileType: record.profileType,
@@ -765,6 +769,9 @@ async function handleApi(request, response, url) {
         : await stopMultiloginProfile({
             profileId: segments[3]
           });
+    const cleanup = stopOperatorSessionsForProfile(segments[3], {
+      reason: "Profile stopped from dashboard."
+    });
     const verifiedStatus = body.profileType === "mobile" ? await verifyMobileProfileStatus(segments[3]) : null;
     const record = updateOperatorProfileRecord(segments[3], {
       profileName: body.profileName,
@@ -779,6 +786,10 @@ async function handleApi(request, response, url) {
     });
     sendJson(response, 200, {
       ...result,
+      cleanup: {
+        stoppedSessions: cleanup.sessions.length,
+        cancelledTasks: cleanup.cancelledTasks.length
+      },
       verifiedStatus,
       record,
       snapshot: getOperatorSnapshot()

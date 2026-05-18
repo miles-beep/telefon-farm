@@ -27,13 +27,14 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start Work** one-click workflow: prepare profile, run start, and start the session runner
 - **Open Next Ready Profile** workflow for moving through the next available profile without choosing it manually
-- **Live Agent** strip at the top of the dashboard for active profiles, Multilogin status checks, auto-stop timers, and latest reports
+- **Live Agent** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
 - **Priority Board** for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
 - Local Review Queue and Comment Drafts panels for manual follow-up work
 - Daily overview for profiles used today, active sessions, completed prompts, and attention items
 - Operator Queue with operators, queued tasks, and task status tracking
+- Stopping a session or profile clears queued/running/failed operator tasks tied to that profile so stale work does not remain active
 - Server-side random prompt planning: one reusable start task, then random local prompts
 - Presets: Review mode, Light warmup, Comment drafting, and No engagement
 - Dashboard controls to start and stop Multilogin profiles
@@ -64,7 +65,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** to watch the phone, or **Open X app** to foreground the installed Android X app through ADB. The **Live Agent** strip will show active profiles and the latest report.
+11. Use **Viewer** to watch the phone, or **Open X app** to foreground the installed Android X app through ADB. The **Live Agent** strip shows active sessions first, then queued work, ready profiles, and attention items.
 12. Use terminal commands if you prefer CLI control.
 
 Completed and cancelled operator tasks are hidden from the active list. Failed tasks stay visible until you rerun, complete, or cancel them.

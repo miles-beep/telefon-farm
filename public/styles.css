@@ -415,6 +415,86 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.session-overview {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.session-overview-block {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.session-overview-block.primary {
+  border-color: #83bcae;
+  background: #f1faf6;
+}
+
+.session-overview-block.attention {
+  border-color: #dfb8b1;
+}
+
+.session-overview-block > header,
+.session-overview-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-overview-block > header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-overview-block > header strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.session-overview-block > div {
+  display: grid;
+  gap: 7px;
+}
+
+.session-overview-row {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  padding: 8px;
+}
+
+.session-overview-row.active {
+  border-color: #9fcbbd;
+}
+
+.session-overview-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.session-overview-row span,
+.session-overview-row p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.session-overview-row p {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .daily-overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -572,6 +652,26 @@ h2 {
   display: grid;
   gap: 8px;
   margin-top: 12px;
+}
+
+.operator-task-group {
+  display: grid;
+  gap: 8px;
+}
+
+.operator-task-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.operator-task-group > div {
+  display: grid;
+  gap: 8px;
 }
 
 .action-runner {
@@ -1243,6 +1343,10 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .session-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .operator-grid button,
   .operator-notes {
     grid-column: 1 / -1;
@@ -1260,7 +1364,8 @@ tbody tr:hover {
   .profile-grid,
   .profile-buckets,
   .operator-grid,
-  .operator-agents {
+  .operator-agents,
+  .session-overview {
     grid-template-columns: 1fr;
   }
 

@@ -61,11 +61,16 @@ Added in commit `241ba5b`.
 Shows:
 
 - Active profiles
+- Active sessions and whether they are prepared/running/needs attention
+- Queued/running/failed work for the selected profile flow
+- Ready profiles and attention profiles in separate overview blocks
 - Multilogin mobile status check result
 - Local running/starting/stopping state
 - Auto-stop countdown
 - Last report or warning
 - Quick controls: Viewer, Open X app, Task, Needs attention, Stop
+
+Stopping a session from the overview marks the session stopped and cancels queued, running, and failed tasks for that session/profile. Stopping a Multilogin profile also closes active operator sessions for that profile and clears its queued work.
 
 Live polling:
 

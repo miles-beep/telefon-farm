@@ -60,6 +60,7 @@ const nodes = {
   dailyAttention: $("#dailyAttention"),
   liveAgentSummary: $("#liveAgentSummary"),
   liveAgentBoard: $("#liveAgentBoard"),
+  sessionOverview: $("#sessionOverview"),
   profileBucketSummary: $("#profileBucketSummary"),
   profileBuckets: $("#profileBuckets"),
   reviewQueueSummary: $("#reviewQueueSummary"),
@@ -103,6 +104,7 @@ let multiloginProfilesState = {
 };
 const TERMINAL_TASK_STATUSES = new Set(["completed", "cancelled"]);
 const ACTIVE_PROFILE_STATUSES = new Set(["starting", "running", "stopping", "prepared"]);
+const ACTIVE_SESSION_STATUSES = new Set(["prepared", "running", "needs_attention"]);
 let queuePlanInFlight = false;
 let toastTimer = null;
 let liveStatusState = {
@@ -801,8 +803,7 @@ function fillSessionPresetSelect() {
 }
 
 function activeSessionForProfile(profileId) {
-  const activeStatuses = new Set(["prepared", "running", "needs_attention"]);
-  return (operatorState?.sessions || []).find((session) => session.profileId === profileId && activeStatuses.has(session.status));
+  return (operatorState?.sessions || []).find((session) => session.profileId === profileId && ACTIVE_SESSION_STATUSES.has(session.status));
 }
 
 function selectedSessionProfile() {
@@ -933,7 +934,7 @@ function renderOperator() {
   fillOperatorProfileSelect();
 
   const summary = operatorState.summary;
-  nodes.operatorSummary.textContent = `${summary.queuedTasks} queued, ${summary.runningTasks} running`;
+  nodes.operatorSummary.textContent = `${summary.activeSessions} sessions, ${summary.runningTasks} running, ${summary.queuedTasks} queued`;
   nodes.operatorAgents.innerHTML = operators
     .map(
       (agent) => `
@@ -954,44 +955,71 @@ function renderOperator() {
       return leftTime - rightTime;
     });
   if (!visibleTasks.length) {
-    nodes.operatorTaskList.innerHTML = `<p class="empty">No operator tasks yet.</p>`;
+    nodes.operatorTaskList.innerHTML = `<p class="empty">No queued or running operator work.</p>`;
     return;
   }
 
-  nodes.operatorTaskList.innerHTML = visibleTasks
-    .map((task) => {
-      const agent = operatorAgentById(task.agentId);
-      const fn = operatorFunctionById(task.functionId);
-      const canRun = ["queued", "failed"].includes(task.status);
-      const canComplete = ["queued", "running", "failed"].includes(task.status);
-      return `
-        <article class="operator-task">
-          <header>
-            <div>
-              <strong>${escapeHtml(task.functionLabel)}</strong>
-              <p>${escapeHtml(task.profileName)} | ${escapeHtml(agent?.name ?? task.agentId)}</p>
-            </div>
-            <span class="tag ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
-          </header>
-          <div class="operator-task-meta">
-            ${task.targetUrl ? `<span>${escapeHtml(task.targetUrl)}</span>` : ""}
-            ${task.delaySec ? `<span>Delay ${escapeHtml(task.delaySec)}s</span>` : ""}
-            ${task.scheduledFor ? `<span>At ${escapeHtml(formatTime(task.scheduledFor))}</span>` : ""}
-            ${task.notes ? `<span>${escapeHtml(task.notes)}</span>` : ""}
-            ${task.error ? `<span>${escapeHtml(task.error)}</span>` : ""}
-            ${fn?.mode === "manual" && task.status === "running" ? `<span>Manual session active</span>` : ""}
+  const renderTaskCard = (task) => {
+    const agent = operatorAgentById(task.agentId);
+    const fn = operatorFunctionById(task.functionId);
+    const canRun = ["queued", "failed"].includes(task.status);
+    const canComplete = ["queued", "running", "failed"].includes(task.status);
+    return `
+      <article class="operator-task">
+        <header>
+          <div>
+            <strong>${escapeHtml(task.functionLabel)}</strong>
+            <p>${escapeHtml(task.profileName)} | ${escapeHtml(agent?.name ?? task.agentId)}</p>
           </div>
-          <footer>
-            <span>${escapeHtml(formatRelative(task.updatedAt))}</span>
-            <div class="button-row inline">
-              <button class="secondary operator-run-task" data-task-id="${escapeHtml(task.id)}" ${canRun ? "" : "disabled"}>Run</button>
-              <button class="secondary operator-task-status" data-task-id="${escapeHtml(task.id)}" data-status="completed" ${canComplete ? "" : "disabled"}>Done</button>
-              <button class="secondary operator-task-status" data-task-id="${escapeHtml(task.id)}" data-status="cancelled" ${["queued", "running"].includes(task.status) ? "" : "disabled"}>Cancel</button>
-            </div>
-          </footer>
-        </article>
-      `;
-    })
+          <span class="tag ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
+        </header>
+        <div class="operator-task-meta">
+          ${task.targetUrl ? `<span>${escapeHtml(task.targetUrl)}</span>` : ""}
+          ${task.delaySec ? `<span>Delay ${escapeHtml(task.delaySec)}s</span>` : ""}
+          ${task.scheduledFor ? `<span>At ${escapeHtml(formatTime(task.scheduledFor))}</span>` : ""}
+          ${task.notes ? `<span>${escapeHtml(task.notes)}</span>` : ""}
+          ${task.error ? `<span>${escapeHtml(task.error)}</span>` : ""}
+          ${fn?.mode === "manual" && task.status === "running" ? `<span>Manual session active</span>` : ""}
+        </div>
+        <footer>
+          <span>${escapeHtml(formatRelative(task.updatedAt))}</span>
+          <div class="button-row inline">
+            <button class="secondary operator-run-task" data-task-id="${escapeHtml(task.id)}" ${canRun ? "" : "disabled"}>Run</button>
+            <button class="secondary operator-task-status" data-task-id="${escapeHtml(task.id)}" data-status="completed" ${canComplete ? "" : "disabled"}>Done</button>
+            <button class="secondary operator-task-status" data-task-id="${escapeHtml(task.id)}" data-status="cancelled" ${["queued", "running", "failed"].includes(task.status) ? "" : "disabled"}>Cancel</button>
+          </div>
+        </footer>
+      </article>
+    `;
+  };
+
+  const groups = [
+    {
+      title: "Running now",
+      tasks: visibleTasks.filter((task) => task.status === "running")
+    },
+    {
+      title: "Needs action",
+      tasks: visibleTasks.filter((task) => task.status === "failed")
+    },
+    {
+      title: "Queued next",
+      tasks: visibleTasks.filter((task) => task.status === "queued")
+    }
+  ].filter((group) => group.tasks.length);
+
+  nodes.operatorTaskList.innerHTML = groups
+    .map(
+      (group) => `
+        <section class="operator-task-group">
+          <header>
+            <strong>${escapeHtml(group.title)}</strong>
+            <span>${group.tasks.length}</span>
+          </header>
+          <div>${group.tasks.map(renderTaskCard).join("")}</div>
+        </section>
+      `
+    )
     .join("");
 }
 
@@ -1060,7 +1088,7 @@ function latestProfileReport(profileId) {
   const record = profileRecord(profileId);
   const session = activeSessionForProfile(profileId);
   const latestSession = (operatorState?.sessions || []).find((item) => item.profileId === profileId);
-  const event = latestSession?.events?.[latestSession.events.length - 1] || null;
+  const event = latestSession?.events?.[0] || null;
   if (event) return `${event.label || "Prompt"}: ${event.outcome || "recorded"} ${formatRelative(event.createdAt)}`;
   if (record?.lastCommandAt) return `${record.lastCommandResult || record.lastCommand || "Command completed"} ${formatRelative(record.lastCommandAt)}`;
   if (record?.issue) return record.issue;
@@ -1136,6 +1164,109 @@ function renderLiveAgentBoard() {
       `;
     })
     .join("");
+}
+
+function renderSessionOverview() {
+  if (!operatorState || !nodes.sessionOverview) return;
+
+  const sessions = operatorState.sessions || [];
+  const activeSessions = sessions.filter((session) => ACTIVE_SESSION_STATUSES.has(session.status));
+  const runningTasks = (operatorState.tasks || []).filter((task) => task.status === "running");
+  const queuedTasks = (operatorState.tasks || []).filter((task) => task.status === "queued");
+  const failedTasks = (operatorState.tasks || []).filter((task) => task.status === "failed");
+  const rows = priorityProfiles();
+  const readyRows = rows.filter((row) => row.status === "ready").slice(0, 4);
+  const attentionRows = rows
+    .filter((row) => row.record?.issue || ["needs_attention", "problem", "wrong_screen", "stuck_play_store", "phone_frozen"].includes(row.status))
+    .slice(0, 4);
+
+  const renderActiveSession = (session) => {
+    const record = profileRecord(session.profileId);
+    const prompt = session.currentPrompt;
+    const detail = prompt
+      ? `${prompt.label}${prompt.scheduledFor ? ` | ${formatFuture(prompt.scheduledFor)}` : ""}`
+      : record?.lastCommandResult || "No active prompt.";
+    return `
+      <article class="session-overview-row active">
+        <div>
+          <strong>${escapeHtml(session.profileName || session.profileId)}</strong>
+          <span>${escapeHtml(session.status.replaceAll("_", " "))}</span>
+          <p>${escapeHtml(detail)}</p>
+        </div>
+        <div class="button-row inline">
+          <button class="secondary session-overview-select" type="button" data-profile-id="${escapeHtml(session.profileId)}">Select</button>
+          <button class="secondary session-overview-stop" type="button" data-session-id="${escapeHtml(session.id)}">Stop + clear</button>
+        </div>
+      </article>
+    `;
+  };
+
+  const renderTaskRow = (task) => `
+    <article class="session-overview-row">
+      <div>
+        <strong>${escapeHtml(task.functionLabel)}</strong>
+        <span>${escapeHtml(task.status)}</span>
+        <p>${escapeHtml(task.profileName)}${task.scheduledFor ? ` | ${escapeHtml(formatTime(task.scheduledFor))}` : ""}</p>
+      </div>
+    </article>
+  `;
+
+  const renderProfileRow = ({ profile, status, record }) => `
+    <article class="session-overview-row">
+      <div>
+        <strong>${escapeHtml(profile.name || profile.id)}</strong>
+        <span>${escapeHtml(status.replaceAll("_", " "))}</span>
+        <p>${escapeHtml(record?.issue || record?.lastCommandResult || "Ready")}</p>
+      </div>
+      <button class="secondary session-overview-select" type="button" data-profile-id="${escapeHtml(profile.id)}">Select</button>
+    </article>
+  `;
+
+  nodes.sessionOverview.innerHTML = `
+    <section class="session-overview-block primary">
+      <header>
+        <span>Active sessions</span>
+        <strong>${activeSessions.length}</strong>
+      </header>
+      <div>
+        ${
+          activeSessions.length
+            ? activeSessions.slice(0, 4).map(renderActiveSession).join("")
+            : `<p class="empty">No profile session is active.</p>`
+        }
+      </div>
+    </section>
+    <section class="session-overview-block">
+      <header>
+        <span>Work queue</span>
+        <strong>${runningTasks.length}/${queuedTasks.length}</strong>
+      </header>
+      <div>
+        ${
+          [...runningTasks, ...failedTasks, ...queuedTasks].slice(0, 5).map(renderTaskRow).join("") ||
+          `<p class="empty">No task is waiting.</p>`
+        }
+      </div>
+    </section>
+    <section class="session-overview-block">
+      <header>
+        <span>Ready next</span>
+        <strong>${readyRows.length}</strong>
+      </header>
+      <div>
+        ${readyRows.length ? readyRows.map(renderProfileRow).join("") : `<p class="empty">No ready profile synced.</p>`}
+      </div>
+    </section>
+    <section class="session-overview-block attention">
+      <header>
+        <span>Attention</span>
+        <strong>${attentionRows.length}</strong>
+      </header>
+      <div>
+        ${attentionRows.length ? attentionRows.map(renderProfileRow).join("") : `<p class="empty">No active issues.</p>`}
+      </div>
+    </section>
+  `;
 }
 
 function renderProfileBuckets() {
@@ -1317,6 +1448,7 @@ function render() {
   renderAccountsTable();
   renderOtpQueue();
   renderLiveAgentBoard();
+  renderSessionOverview();
   renderPriorityBoard();
   renderSessionConsole();
   renderOperator();
@@ -1605,7 +1737,8 @@ async function stopProfileControl(profile, { message = "Stopped Multilogin profi
   if (result.snapshot) operatorState = result.snapshot;
   await loadMultiloginProfiles({ quiet: true });
   const warnings = result.response?.payload?.warnings || [];
-  showToast(warnings.length ? "Stop requested with Multilogin warning. Check Priority Board." : message);
+  const cleanupText = result.cleanup?.cancelledTasks ? ` Cleared ${result.cleanup.cancelledTasks} task(s).` : "";
+  showToast(warnings.length ? "Stop requested with Multilogin warning. Check Priority Board." : `${message}${cleanupText}`);
   return result;
 }
 
@@ -1850,7 +1983,8 @@ nodes.stopSessionButton.addEventListener("click", async () => {
     });
     operatorState = result.snapshot;
     render();
-    showToast("Session stopped.");
+    const count = result.session?.cleanup?.cancelledTaskCount || 0;
+    showToast(`Session stopped. Cleared ${count} task${count === 1 ? "" : "s"}.`);
   } catch (error) {
     showToast(error.message);
   }
@@ -2057,6 +2191,8 @@ document.addEventListener("click", async (event) => {
   const manualCommandButton = event.target.closest(".manual-command-run");
   const operatorRunButton = event.target.closest(".operator-run-task");
   const operatorStatusButton = event.target.closest(".operator-task-status");
+  const sessionOverviewSelectButton = event.target.closest(".session-overview-select");
+  const sessionOverviewStopButton = event.target.closest(".session-overview-stop");
 
   if (verifyButton) {
     try {
@@ -2369,6 +2505,31 @@ document.addEventListener("click", async (event) => {
       operatorState = result.snapshot;
       render();
       showToast(`Task ${operatorStatusButton.dataset.status}.`);
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (sessionOverviewSelectButton) {
+    const profile = multiloginProfileById(sessionOverviewSelectButton.dataset.profileId);
+    if (profile) {
+      nodes.sessionProfileSelect.value = profile.id;
+      nodes.operatorProfileSelect.value = profile.id;
+      render();
+      showToast("Profile selected.");
+    }
+  }
+
+  if (sessionOverviewStopButton) {
+    try {
+      const result = await api(`/api/operator/sessions/${encodeURIComponent(sessionOverviewStopButton.dataset.sessionId)}/stop`, {
+        method: "POST",
+        body: JSON.stringify({ notes: "Stopped from Session Overview." })
+      });
+      operatorState = result.snapshot;
+      render();
+      const count = result.session?.cleanup?.cancelledTaskCount || 0;
+      showToast(`Session stopped. Cleared ${count} task${count === 1 ? "" : "s"}.`);
     } catch (error) {
       showToast(error.message);
     }
