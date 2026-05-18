@@ -1331,7 +1331,8 @@ function renderGuidedWorkPanel() {
   const adbDeviceSummary = rawAdbDevices.length
     ? rawAdbDevices.map((device) => `${device.serial || "unknown"} ${device.status || ""}`.trim()).join(", ")
     : "";
-  const adbNeededText = "Phone viewer is open, but Step 3 needs ADB control. In Multilogin, click the green Android icon and copy the ADB command once.";
+  const adbNeededText =
+    "Phone viewer is open, but Step 3 needs ADB control. In the Multilogin profile list, enable ADB for this running phone, then copy the command from the green Android icon once.";
   const controlText = androidReady
     ? `Ready. Last report: ${lastReport}`
     : adbDeviceSummary
@@ -1372,7 +1373,7 @@ function renderGuidedWorkPanel() {
       <header class="guided-card-header">
         <span class="step-number">2</span>
         <div>
-          <h3>Start and connect ${helpTip("Start My X Session opens the visible Multilogin phone and starts the automatic connector. If Multilogin asks for ADB, copy the green Android icon command once.")}</h3>
+          <h3>Start and connect ${helpTip("Start My X Session opens the visible Multilogin phone and starts the automatic connector. If Step 3 stays locked, enable ADB in the Multilogin profile list and copy the green Android icon command once.")}</h3>
           <p>${escapeHtml(statusText)}</p>
         </div>
       </header>
@@ -1380,7 +1381,7 @@ function renderGuidedWorkPanel() {
       <div class="guided-actions three">
         <button class="guided-start-session" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Start My X Session</button>
         <button class="secondary guided-viewer" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Open Viewer</button>
-        <button class="secondary guided-auto-connect" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>${autoConnecting ? "Watching..." : "Auto-connect"}</button>
+        <button class="secondary guided-auto-connect" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>${autoConnecting ? "Waiting for ADB" : "Auto-connect"}</button>
       </div>
       <div class="guided-facts">
         <span>${escapeHtml(androidReady ? "Phone control connected" : "Phone control not connected")}</span>

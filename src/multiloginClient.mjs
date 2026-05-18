@@ -585,10 +585,15 @@ function parseAdbSetupInput(payload = {}) {
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join("\n");
+  const connectMatch = raw.match(/\badb\s+connect\s+([^\s;"']+)/i);
+  const requiresConnectCommand = Boolean(payload.requireConnectCommand);
+  if (requiresConnectCommand && !connectMatch) {
+    throw new Error("Clipboard does not contain a Multilogin ADB command yet. Copy the command that starts with adb connect.");
+  }
   const address =
     String(payload.address || "").trim() ||
-    raw.match(/\badb\s+connect\s+([^\s]+)/i)?.[1] ||
-    raw.match(/\b([A-Za-z0-9.-]+:\d{2,5})\b/)?.[1] ||
+    connectMatch?.[1] ||
+    (requiresConnectCommand ? "" : raw.match(/\b([A-Za-z0-9.-]+:\d{2,5})\b/)?.[1]) ||
     "";
   const authMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+glogin\s+([^\s]+)/i);
   const serial = authMatch?.[1] || address;
@@ -596,6 +601,12 @@ function parseAdbSetupInput(payload = {}) {
 
   if (!address) {
     throw new Error("Paste an ADB connect command or address from Multilogin, for example adb connect IP:PORT.");
+  }
+  if (/^https?:\/\//i.test(address)) {
+    throw new Error("Clipboard contains a web URL, not a Multilogin ADB command. Copy the command that starts with adb connect.");
+  }
+  if (/^(localhost|127\.0\.0\.1):5180$/i.test(address)) {
+    throw new Error("Clipboard contains the local dashboard address, not the Multilogin cloud-phone ADB address.");
   }
 
   return {
@@ -739,7 +750,7 @@ export async function autoConnectAndroidPhoneControl(payload = {}, env = process
   const clipboardText = await readMacClipboard(env);
   try {
     return {
-      ...(await connectAndroidPhoneControl({ ...payload, commandText: clipboardText }, env)),
+      ...(await connectAndroidPhoneControl({ ...payload, commandText: clipboardText, requireConnectCommand: true }, env)),
       source: "mac_clipboard",
       message: "Connected from the Mac clipboard."
     };
