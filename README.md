@@ -32,7 +32,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - **Active Now** strip at the top of the dashboard for active profiles, session hierarchy, queued work, Multilogin status checks, auto-stop timers, and latest reports
 - **Phone Control** status panel that separates Multilogin lifecycle controls from optional Android/ADB inside-phone controls
 - **Assistive Controller** for explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
-- Built-in ADB setup form: paste the `adb connect ...` and `adb -s ... shell glogin ...` commands copied from Multilogin's green Android icon
+- Built-in phone-control setup: open the selected phone, paste the Multilogin ADB commands from clipboard, connect, verify, and test with a screenshot
 - **My Profiles** board for seeing running/starting profiles, warnings, auto-stop timers, and quick task controls
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Recovery buttons for login needed, missing X app, wrong screen, stuck Play Store, and frozen phone notes
@@ -71,7 +71,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 8. Use **Cooldown 1h** after you finish with a profile, or mark setup/attention states when something needs fixing.
 9. Add review URLs and reusable comment drafts locally so you can revisit them later.
 10. Use **Prepare Profile**, **Run Start**, and **Start Session** separately only when you want manual control over each step.
-11. Use **Viewer** to watch the phone. In Multilogin's phone viewer, enable ADB from the green Android icon, copy the `adb connect ...` and `adb -s ... shell glogin ...` commands, then paste them into **Phone Control**.
+11. In **Phone Control**, click **Open selected phone**. In Multilogin's phone viewer, enable ADB from the green Android icon, copy the `adb connect ...` and `adb -s ... shell glogin ...` commands, then use **Paste clipboard** and **Connect + verify**.
 12. Use **Assistive Controller** commands after the **Phone Control** panel shows Android inside-phone controls are ready.
 13. Use terminal commands if you prefer CLI control.
 

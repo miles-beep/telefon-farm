@@ -173,12 +173,25 @@ function canRunAndroidCommands() {
   return Boolean(phoneControlState?.android?.available);
 }
 
+function canRunAndroidCommandsForProfile(profileId) {
+  if (!canRunAndroidCommands()) return false;
+  const devices = phoneControlState?.android?.connectedDevices || [];
+  return devices.length <= 1 || Boolean(adbMappings()[profileId]);
+}
+
 function androidControlReason() {
   return phoneControlState?.android?.error || "Android in-phone controls need ADB connected to the running cloud phone.";
 }
 
-function androidButtonAttrs() {
-  return canRunAndroidCommands() ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
+function androidControlReasonForProfile(profileId) {
+  if (!canRunAndroidCommands()) return androidControlReason();
+  const devices = phoneControlState?.android?.connectedDevices || [];
+  if (devices.length > 1 && !adbMappings()[profileId]) return "Multiple Android phones are connected. Choose this profile's phone control device.";
+  return "";
+}
+
+function androidButtonAttrs(profileId = "") {
+  return canRunAndroidCommandsForProfile(profileId) ? "" : `disabled title="${escapeHtml(androidControlReasonForProfile(profileId))}"`;
 }
 
 function adbMappings() {
@@ -201,6 +214,11 @@ function adbSerialForProfile(profileId) {
   if (mapped) return mapped;
   const devices = phoneControlState?.android?.connectedDevices || [];
   return devices.length === 1 ? devices[0] : "";
+}
+
+function selectedPhoneControlProfile() {
+  const profile = assistiveProfile();
+  return profile?.profileType === "mobile" ? profile : null;
 }
 
 function platformById(platformId) {
@@ -1117,7 +1135,7 @@ function renderPriorityBoard() {
             <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Start + View</button>
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs()}>Open X app</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs(profile.id)}>Open X app</button>`
                 : ""
             }
             ${
@@ -1158,11 +1176,15 @@ function renderPhoneControlPanel() {
   }
 
   const multiloginReady = phoneControlState.multilogin?.available;
-  const androidReady = phoneControlState.android?.available;
   const adbDevices = phoneControlState.android?.connectedDevices || [];
   const adbDeviceText = adbDevices.length ? adbDevices.join(", ") : "No connected Android phone";
   const adbError = phoneControlState.android?.error || "";
+  const profile = selectedPhoneControlProfile();
+  const profileLabel = profile ? `${profile.name || profile.id}${profile.serialNumber ? ` | Serial ${profile.serialNumber}` : ""}` : "No mobile profile selected";
   const setupPlaceholder = `adb connect IP:PORT\nadb -s IP:PORT shell glogin PASSWORD`;
+  const setupDisabled = profile ? "" : "disabled";
+  const profileAndroidReady = Boolean(profile?.id && canRunAndroidCommandsForProfile(profile.id));
+  const androidDisabled = profileAndroidReady ? "" : "disabled";
 
   nodes.phoneControlPanel.innerHTML = `
     <article class="phone-control-card ${multiloginReady ? "ready" : "blocked"}">
@@ -1174,31 +1196,42 @@ function renderPhoneControlPanel() {
         <span class="tag ${multiloginReady ? "ready" : "problem"}">${multiloginReady ? "ready" : "blocked"}</span>
       </header>
     </article>
-    <article class="phone-control-card ${androidReady ? "ready" : "blocked"}">
+    <article class="phone-control-card phone-control-setup ${profileAndroidReady ? "ready" : "blocked"}">
       <header>
         <div>
           <strong>Inside-phone controls</strong>
-          <p>Open X app and scroll the Android screen.</p>
+          <p>${escapeHtml(profileLabel)}</p>
         </div>
-        <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "ready" : "setup needed"}</span>
+        <span class="tag ${profileAndroidReady ? "ready" : "problem"}">${profileAndroidReady ? "ready" : "connect phone control"}</span>
       </header>
       <div class="phone-control-meta">
         <span>${escapeHtml(adbDeviceText)}</span>
         ${adbError ? `<span>${escapeHtml(adbError)}</span>` : ""}
       </div>
-    </article>
-    <article class="phone-control-note">
-      ${escapeHtml(phoneControlState.explanation || "Multilogin opens the phone. Android commands need a connected phone-control channel.")}
+
+      <div class="phone-control-actions">
+        <button class="phone-control-viewer" type="button" ${setupDisabled}>Open selected phone</button>
+        <button id="adbPasteButton" class="secondary" type="button">Paste clipboard</button>
+        <button id="adbRefreshButton" class="secondary" type="button">Refresh status</button>
+      </div>
+
       <form id="adbConnectForm" class="adb-connect-form">
         <label>
           Multilogin ADB commands
           <textarea id="adbSetupText" rows="2" placeholder="${escapeHtml(setupPlaceholder)}">${escapeHtml(adbSetupText)}</textarea>
         </label>
         <div class="button-row inline">
-          <button type="submit">Connect ADB</button>
-          <button id="adbRefreshButton" class="secondary" type="button">Refresh</button>
+          <button type="submit">Connect + verify</button>
+          <button id="phoneControlTestButton" class="secondary" type="button" ${androidDisabled}>Test screenshot</button>
+          <button id="phoneControlOpenXButton" class="secondary" type="button" ${androidDisabled}>Open X app</button>
         </div>
       </form>
+
+      <div class="phone-control-steps">
+        <span class="${multiloginReady ? "done" : ""}">1 Multilogin ready</span>
+        <span class="${profile ? "done" : ""}">2 Phone selected</span>
+        <span class="${profileAndroidReady ? "done" : ""}">3 Phone control connected</span>
+      </div>
     </article>
   `;
 }
@@ -1207,8 +1240,8 @@ function renderAssistiveController() {
   if (!nodes.assistiveController) return;
 
   const profile = assistiveProfile();
-  const androidReady = canRunAndroidCommands();
-  const androidAttrs = androidReady ? "" : `disabled title="${escapeHtml(androidControlReason())}"`;
+  const androidReady = canRunAndroidCommandsForProfile(profile?.id);
+  const androidAttrs = androidReady ? "" : `disabled title="${escapeHtml(androidControlReasonForProfile(profile?.id))}"`;
   const devices = phoneControlState?.android?.connectedDevices || [];
   const mappedSerial = profile ? adbSerialForProfile(profile.id) : "";
   const draftText = localStorage.getItem("telephones.assistiveDraft") || "";
@@ -1232,8 +1265,16 @@ function renderAssistiveController() {
           <strong>${escapeHtml(profile.name || profile.id)}</strong>
           <p>${escapeHtml(profile.profileType === "mobile" ? `Mobile | Serial ${profile.serialNumber || "unknown"}` : "Browser profile")}</p>
         </div>
-        <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "phone control ready" : "viewer only"}</span>
+        <span class="tag ${androidReady ? "ready" : "problem"}">${androidReady ? "phone control ready" : "connect phone control"}</span>
       </header>
+
+      ${
+        androidReady
+          ? ""
+          : `<div class="assistive-warning">
+              Open the selected phone, enable ADB in Multilogin, then paste the ADB commands into Phone Control.
+            </div>`
+      }
 
       <div class="assistive-device-row">
         <label>
@@ -1344,7 +1385,7 @@ function renderLiveAgentBoard() {
             }
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs()}>Open X app</button>`
+                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs(profile.id)}>Open X app</button>`
                 : ""
             }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
@@ -1810,7 +1851,7 @@ function sessionPayload(profile) {
     folderId: profile.folderId || "",
     targetUrl: nodes.sessionTargetUrl.value,
     notes: nodes.sessionNotes.value,
-    openX: profile.profileType === "mobile" && canRunAndroidCommands(),
+    openX: profile.profileType === "mobile" && canRunAndroidCommandsForProfile(profile.id),
     runUiMacro: false
   };
 }
@@ -1891,8 +1932,9 @@ async function openViewerControl(profile, { message = "Opened Multilogin viewer.
 
 async function openXControl(profile, { message = "Opened Android X app." } = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
-  if (!canRunAndroidCommands()) {
-    await openViewerControl(profile, { message: "Opened phone viewer. Open X manually until inside-phone controls are connected." });
+  if (!canRunAndroidCommandsForProfile(profile.id)) {
+    if (canRunAndroidCommands()) throw new Error(androidControlReasonForProfile(profile.id));
+    await openViewerControl(profile, { message: "Opened phone viewer. Connect phone control before opening X from the dashboard." });
     return null;
   }
 
@@ -1902,6 +1944,7 @@ async function openXControl(profile, { message = "Opened Android X app." } = {})
       profileName: profile.name || "",
       profileType: profile.profileType || "mobile",
       folderId: profile.folderId || "",
+      adbSerial: adbSerialForProfile(profile.id),
       runUiMacro: false
     })
   });
@@ -1915,7 +1958,7 @@ async function openXControl(profile, { message = "Opened Android X app." } = {})
 async function runManualCommandControl(profile, command, options = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
   if (profile.profileType !== "mobile") throw new Error("Manual phone commands are only available for mobile profiles.");
-  if (!canRunAndroidCommands()) throw new Error(androidControlReason());
+  if (!canRunAndroidCommandsForProfile(profile.id)) throw new Error(androidControlReasonForProfile(profile.id));
 
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/command`, {
     method: "POST",
@@ -2412,6 +2455,10 @@ document.addEventListener("click", async (event) => {
   const sessionOverviewStopButton = event.target.closest(".session-overview-stop");
   const assistiveViewerButton = event.target.closest(".assistive-viewer");
   const assistiveCommandButton = event.target.closest(".assistive-command");
+  const phoneControlViewerButton = event.target.closest(".phone-control-viewer");
+  const phoneControlTestButton = event.target.closest("#phoneControlTestButton");
+  const phoneControlOpenXButton = event.target.closest("#phoneControlOpenXButton");
+  const adbPasteButton = event.target.closest("#adbPasteButton");
   const adbRefreshButton = event.target.closest("#adbRefreshButton");
 
   if (verifyButton) {
@@ -2518,10 +2565,10 @@ document.addEventListener("click", async (event) => {
   if (queueReviewButton) {
     try {
       await queueOperatorTask({
-        functionId: canRunAndroidCommands() ? "open_x_app" : "open_post_prompt",
+        functionId: canRunAndroidCommandsForProfile(queueReviewButton.dataset.profileId) ? "open_x_app" : "open_post_prompt",
         profileId: queueReviewButton.dataset.profileId,
         targetUrl: "",
-        notes: canRunAndroidCommands() ? "Open X app for review" : "Review manually in the visible phone viewer"
+        notes: canRunAndroidCommandsForProfile(queueReviewButton.dataset.profileId) ? "Open X app for review" : "Review manually in the visible phone viewer"
       });
     } catch (error) {
       showToast(error.message);
@@ -2646,10 +2693,10 @@ document.addEventListener("click", async (event) => {
   if (priorityQueueButton) {
     try {
       await queueOperatorTask({
-        functionId: canRunAndroidCommands() ? "open_x_app" : "open_post_prompt",
+        functionId: canRunAndroidCommandsForProfile(priorityQueueButton.dataset.profileId) ? "open_x_app" : "open_post_prompt",
         profileId: priorityQueueButton.dataset.profileId,
         targetUrl: nodes.sessionTargetUrl.value,
-        notes: canRunAndroidCommands() ? "Open X app from priority board" : "Review manually in the visible phone viewer"
+        notes: canRunAndroidCommandsForProfile(priorityQueueButton.dataset.profileId) ? "Open X app from priority board" : "Review manually in the visible phone viewer"
       });
     } catch (error) {
       showToast(error.message);
@@ -2707,6 +2754,52 @@ document.addEventListener("click", async (event) => {
     }
   }
 
+  if (phoneControlViewerButton) {
+    const profile = selectedPhoneControlProfile();
+    try {
+      await openViewerControl(profile, { message: "Selected phone opened." });
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (adbPasteButton) {
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard paste is not available in this browser.");
+      adbSetupText = await navigator.clipboard.readText();
+      const textArea = document.querySelector("#adbSetupText");
+      if (textArea) textArea.value = adbSetupText;
+      renderPhoneControlPanel();
+      showToast(adbSetupText ? "ADB commands pasted." : "Clipboard is empty.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (phoneControlTestButton) {
+    const profile = selectedPhoneControlProfile();
+    try {
+      phoneControlTestButton.disabled = true;
+      await runManualCommandControl(profile, "screenshot");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      phoneControlTestButton.disabled = false;
+    }
+  }
+
+  if (phoneControlOpenXButton) {
+    const profile = selectedPhoneControlProfile();
+    try {
+      phoneControlOpenXButton.disabled = true;
+      await openXControl(profile);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      phoneControlOpenXButton.disabled = false;
+    }
+  }
+
   if (assistiveCommandButton) {
     const profile = assistiveProfile();
     const command = assistiveCommandButton.dataset.command;
@@ -2734,8 +2827,9 @@ document.addEventListener("click", async (event) => {
   if (adbRefreshButton) {
     try {
       phoneControlState = await api("/api/multilogin/control-status");
+      const profile = selectedPhoneControlProfile();
       render();
-      showToast(canRunAndroidCommands() ? "Phone control ready." : androidControlReason());
+      showToast(profile && canRunAndroidCommandsForProfile(profile.id) ? "Phone control ready." : androidControlReasonForProfile(profile?.id));
     } catch (error) {
       showToast(error.message);
     }
@@ -2827,6 +2921,8 @@ document.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ commandText: adbSetupText })
     });
+    const profile = selectedPhoneControlProfile();
+    if (profile?.id && result.serial) setAdbMapping(profile.id, result.serial);
     phoneControlState = result.status;
     render();
     showToast(result.authOutput ? "ADB connected and authenticated." : "ADB connected. Run auth command if Multilogin requires it.");

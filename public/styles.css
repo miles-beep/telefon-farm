@@ -70,6 +70,12 @@ button.secondary:hover {
   background: #dce4e8;
 }
 
+button.secondary:disabled,
+button.secondary:disabled:hover {
+  background: #c5ccd1;
+  color: #6f7b84;
+}
+
 input,
 select,
 textarea {
@@ -328,7 +334,7 @@ h2 {
 
 .phone-control-panel {
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) minmax(260px, 1.25fr) minmax(260px, 1.35fr);
+  grid-template-columns: minmax(230px, 0.7fr) minmax(420px, 1.8fr);
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -358,6 +364,11 @@ h2 {
   gap: 8px;
 }
 
+.phone-control-setup {
+  display: grid;
+  gap: 10px;
+}
+
 .phone-control-card header p,
 .phone-control-note {
   margin: 4px 0 0;
@@ -385,15 +396,44 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.phone-control-actions,
+.phone-control-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phone-control-actions button {
+  min-height: 40px;
+}
+
+.phone-control-steps span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.phone-control-steps span.done {
+  border-color: #acd3c6;
+  background: #eaf7f1;
+  color: var(--accent-strong);
+}
+
 .adb-connect-form {
   display: grid;
   gap: 8px;
-  margin-top: 10px;
 }
 
 .adb-connect-form textarea {
   min-height: 62px;
   resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .assistive-controller {
@@ -462,6 +502,16 @@ h2 {
 
 .assistive-actions button {
   min-height: 44px;
+}
+
+.assistive-warning {
+  border: 1px solid #e6c3b9;
+  border-radius: 7px;
+  background: #fff8f5;
+  color: #7a372f;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .assistive-draft-grid,
