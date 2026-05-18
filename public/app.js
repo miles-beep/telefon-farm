@@ -190,10 +190,6 @@ function androidControlReasonForProfile(profileId) {
   return "";
 }
 
-function androidButtonAttrs(profileId = "") {
-  return canRunAndroidCommandsForProfile(profileId) ? "" : `disabled title="${escapeHtml(androidControlReasonForProfile(profileId))}"`;
-}
-
 function adbMappings() {
   try {
     return JSON.parse(localStorage.getItem("telephones.adbMappings") || "{}");
@@ -379,13 +375,7 @@ function renderMlxProfileCard(profile, compact = false) {
           }
           ${
             isMobile
-              ? `<button
-                  class="secondary mlx-open-x"
-                  data-profile-id="${escapeHtml(profile.id)}"
-                  data-profile-name="${escapeHtml(profile.name || "")}"
-                  data-folder-id="${escapeHtml(profile.folderId)}"
-                  data-profile-type="mobile"
-                >Open X app</button>`
+              ? renderPhoneControlActionButton(profile, "mlx-open-x")
               : ""
           }
           <button
@@ -732,11 +722,44 @@ function profileFromButton(button) {
   };
 }
 
+function selectProfileForPhoneControl(profile, { scroll = true } = {}) {
+  if (!profile?.id) throw new Error("Select a mobile profile first.");
+  if (nodes.sessionProfileSelect) nodes.sessionProfileSelect.value = profile.id;
+  if (nodes.operatorProfileSelect) nodes.operatorProfileSelect.value = profile.id;
+  render();
+  if (scroll) {
+    const target = nodes.phoneControlPanel?.closest(".live-agent-panel") || nodes.phoneControlPanel;
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function phoneControlButtonData(profile) {
+  return `
+    data-profile-id="${escapeHtml(profile.id)}"
+    data-profile-name="${escapeHtml(profile.name || "")}"
+    data-folder-id="${escapeHtml(profile.folderId)}"
+    data-profile-type="mobile"
+  `;
+}
+
+function renderPhoneControlActionButton(profile, readyClass) {
+  if (canRunAndroidCommandsForProfile(profile.id)) {
+    return `<button class="secondary ${readyClass}" type="button" ${phoneControlButtonData(profile)}>Open X app</button>`;
+  }
+
+  return `<button
+    class="secondary phone-control-profile-setup"
+    type="button"
+    ${phoneControlButtonData(profile)}
+    title="${escapeHtml(androidControlReasonForProfile(profile.id))}"
+  >Setup control</button>`;
+}
+
 function renderManualCommandControls(profile) {
   if (profile?.profileType !== "mobile") return "";
-  const androidReady = canRunAndroidCommands();
+  const androidReady = canRunAndroidCommandsForProfile(profile.id);
   const disabled = androidReady ? "" : "disabled";
-  const title = androidReady ? "Runs inside the Android cloud phone." : androidControlReason();
+  const title = androidReady ? "Runs inside the Android cloud phone." : androidControlReasonForProfile(profile.id);
   return `
     <div class="manual-command" data-profile-id="${escapeHtml(profile.id)}">
       <select class="manual-command-select" aria-label="Manual phone command" ${disabled} title="${escapeHtml(title)}">
@@ -754,7 +777,7 @@ function renderManualCommandControls(profile) {
         ${disabled}
         title="${escapeHtml(title)}"
       >Run</button>
-      ${androidReady ? "" : `<span>${escapeHtml("ADB setup needed")}</span>`}
+      ${androidReady ? "" : `<span>${escapeHtml("Setup control first")}</span>`}
     </div>
   `;
 }
@@ -902,6 +925,7 @@ function renderSessionConsole() {
   const canRunStartTask = Boolean(startTask && ["queued", "failed"].includes(startTask.status));
   const canRecordPrompt = Boolean(session && session.status === "running" && prompt && promptDue);
   const canStartWork = Boolean(profile?.id) && (!session || ["prepared", "needs_attention"].includes(session.status));
+  const canOpenSessionX = Boolean(profile?.id && profile.profileType === "mobile" && canRunAndroidCommandsForProfile(profile.id));
   const nextProfile = nextReadyProfile();
 
   nodes.sessionSummary.textContent = session
@@ -918,7 +942,9 @@ function renderSessionConsole() {
   nodes.runSessionStartTaskButton.disabled = !canRunStartTask;
   nodes.startSessionButton.disabled = !canStart;
   nodes.openSessionViewerButton.disabled = !profile || profile.profileType !== "mobile";
-  nodes.openSessionXButton.disabled = !profile || profile.profileType !== "mobile";
+  nodes.openSessionXButton.disabled = !canOpenSessionX;
+  nodes.openSessionXButton.title =
+    profile?.profileType === "mobile" ? androidControlReasonForProfile(profile.id) || "Open the installed Android X app." : "Select a mobile profile first.";
   nodes.installSessionXButton.disabled = !profile || profile.profileType !== "mobile" || !profile.folderId;
   nodes.stopSessionButton.disabled = !canStop;
   nodes.sessionPromptDoneButton.disabled = !canRecordPrompt;
@@ -1135,7 +1161,7 @@ function renderPriorityBoard() {
             <button class="secondary priority-start-profile" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="${escapeHtml(profile.profileType || "browser")}">Start + View</button>
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs(profile.id)}>Open X app</button>`
+                ? renderPhoneControlActionButton(profile, "priority-open-x")
                 : ""
             }
             ${
@@ -1385,7 +1411,7 @@ function renderLiveAgentBoard() {
             }
             ${
               isMobile
-                ? `<button class="secondary priority-open-x" type="button" data-profile-id="${escapeHtml(profile.id)}" data-profile-name="${escapeHtml(profile.name || "")}" data-folder-id="${escapeHtml(profile.folderId)}" data-profile-type="mobile" ${androidButtonAttrs(profile.id)}>Open X app</button>`
+                ? renderPhoneControlActionButton(profile, "priority-open-x")
                 : ""
             }
             <button class="secondary priority-queue-review" type="button" data-profile-id="${escapeHtml(profile.id)}">Task</button>
@@ -1933,9 +1959,8 @@ async function openViewerControl(profile, { message = "Opened Multilogin viewer.
 async function openXControl(profile, { message = "Opened Android X app." } = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
   if (!canRunAndroidCommandsForProfile(profile.id)) {
-    if (canRunAndroidCommands()) throw new Error(androidControlReasonForProfile(profile.id));
-    await openViewerControl(profile, { message: "Opened phone viewer. Connect phone control before opening X from the dashboard." });
-    return null;
+    selectProfileForPhoneControl(profile);
+    throw new Error(androidControlReasonForProfile(profile.id) || "Connect phone control before opening X from the dashboard.");
   }
 
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/open-x`, {
@@ -2434,6 +2459,7 @@ document.addEventListener("click", async (event) => {
   const mlxOpenViewerButton = event.target.closest(".mlx-open-viewer");
   const mlxOpenXButton = event.target.closest(".mlx-open-x");
   const mlxStopButton = event.target.closest(".mlx-stop-profile");
+  const phoneControlProfileSetupButton = event.target.closest(".phone-control-profile-setup");
   const queueReviewButton = event.target.closest(".queue-profile-review");
   const recoveryButton = event.target.closest(".profile-recovery-action");
   const bucketProfileButton = event.target.closest(".bucket-profile");
@@ -2549,6 +2575,16 @@ document.addEventListener("click", async (event) => {
   if (mlxOpenXButton) {
     try {
       await openXControl(profileFromButton(mlxOpenXButton));
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
+  if (phoneControlProfileSetupButton) {
+    try {
+      const profile = profileFromButton(phoneControlProfileSetupButton);
+      selectProfileForPhoneControl(profile);
+      showToast("Profile selected. Open the phone, enable ADB, then Connect + verify.");
     } catch (error) {
       showToast(error.message);
     }

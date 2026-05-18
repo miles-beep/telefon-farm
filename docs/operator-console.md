@@ -47,7 +47,7 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 - The ADB setup form accepts the two commands Multilogin shows from the green Android icon: `adb connect IP:PORT` and, when required, `adb -s IP:PORT shell glogin PASSWORD`.
 - **My Profiles** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
 - My Profiles cards show local state, Multilogin state, start time, auto-stop countdown, prompt state, and warnings.
-- My Profiles actions let you select a profile, start it, open Viewer, queue a local task, stop it, and use Open X only when Android inside-phone controls are ready.
+- My Profiles actions let you select a profile, start it, open Viewer, queue a local task, stop it, and use Open X only when Android inside-phone controls are ready. Before that, the card shows **Setup control** and jumps to Phone Control.
 - **Open Next Ready Profile** selects the next profile in the Ready bucket, starts the local work session, and opens X for mobile profiles.
 - **Cooldown 1h** marks the selected profile as resting locally so it is skipped by the next-ready picker.
 - **Clear Issue** returns the selected profile to Ready.

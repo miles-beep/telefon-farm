@@ -46,6 +46,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Mobile cloud-phone **Start + View** opens the visible Multilogin phone window so the session can be tested directly
 - Started or opened profiles show local running state and are auto-stopped after 30 minutes
 - Mobile cloud-phone **Open X app** launches the installed Android X app only when Android/ADB inside-phone controls are connected
+- Profile cards show **Setup control** instead of **Open X app** until the selected phone has a verified control channel
 - Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`, disabled until Android/ADB control is available
 - Android app launch and scroll commands use ADB against the selected cloud phone
 - Draft helpers can type text you prepared into the currently focused Android field; they do not choose content or submit posts by themselves
