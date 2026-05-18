@@ -1326,6 +1326,17 @@ function renderGuidedWorkPanel() {
   const lastReport = selectedProfile ? latestProfileReport(selectedProfile.id) : "No report yet.";
   const startDisabled = selectedProfile ? "" : "disabled";
   const androidDisabled = androidReady ? "" : "disabled";
+  const androidError = phoneControlState?.android?.error || "";
+  const rawAdbDevices = phoneControlState?.android?.devices || [];
+  const adbDeviceSummary = rawAdbDevices.length
+    ? rawAdbDevices.map((device) => `${device.serial || "unknown"} ${device.status || ""}`.trim()).join(", ")
+    : "";
+  const adbNeededText = "Phone viewer is open, but Step 3 needs ADB control. In Multilogin, click the green Android icon and copy the ADB command once.";
+  const controlText = androidReady
+    ? `Ready. Last report: ${lastReport}`
+    : adbDeviceSummary
+      ? `${adbNeededText} Current ADB status: ${adbDeviceSummary}.`
+      : adbNeededText;
 
   nodes.liveAgentSummary.textContent = selectedProfile
     ? `${selectedProfile.name || selectedProfile.id} | ${statusText}`
@@ -1374,6 +1385,7 @@ function renderGuidedWorkPanel() {
       <div class="guided-facts">
         <span>${escapeHtml(androidReady ? "Phone control connected" : "Phone control not connected")}</span>
         <span>${escapeHtml(autoConnecting ? "Watching Mac clipboard" : "Connector idle")}</span>
+        ${androidError && !androidReady ? `<span>${escapeHtml(androidError)}</span>` : ""}
       </div>
     </article>
 
@@ -1382,7 +1394,7 @@ function renderGuidedWorkPanel() {
         <span class="step-number">3</span>
         <div>
           <h3>Control X ${helpTip("These buttons send explicit Android commands to your selected phone. Open X launches the installed X app. Scroll only swipes the visible feed.")}</h3>
-          <p>${escapeHtml(androidReady ? `Ready. Last report: ${lastReport}` : "Locked until phone control is connected. Use step 2 first.")}</p>
+          <p>${escapeHtml(controlText)}</p>
         </div>
       </header>
       <div class="guided-actions control">
