@@ -586,16 +586,17 @@ function parseAdbSetupInput(payload = {}) {
     .filter(Boolean)
     .join("\n");
   const connectMatch = raw.match(/\badb\s+connect\s+([^\s;"']+)/i);
+  const authMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+glogin\s+([^\s]+)/i);
   const requiresConnectCommand = Boolean(payload.requireConnectCommand);
-  if (requiresConnectCommand && !connectMatch) {
-    throw new Error("Clipboard does not contain a Multilogin ADB command yet. Copy the command that starts with adb connect.");
+  if (requiresConnectCommand && !connectMatch && !authMatch) {
+    throw new Error("Clipboard does not contain a Multilogin ADB command yet. Copy the command that starts with adb connect or adb -s.");
   }
   const address =
     String(payload.address || "").trim() ||
     connectMatch?.[1] ||
+    authMatch?.[1] ||
     (requiresConnectCommand ? "" : raw.match(/\b([A-Za-z0-9.-]+:\d{2,5})\b/)?.[1]) ||
     "";
-  const authMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+glogin\s+([^\s]+)/i);
   const serial = authMatch?.[1] || address;
   const password = String(payload.password || "").trim() || authMatch?.[2] || raw.match(/\bglogin\s+([^\s]+)/i)?.[1] || "";
 
