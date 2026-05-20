@@ -2,7 +2,7 @@
 
 A local Multilogin profile dashboard. It connects to your Multilogin browser profiles and mobile cloud phones, shows them without seeded fake data, and lets you start or stop profiles from the dashboard or terminal.
 
-The app intentionally stays local. It does not automate likes, comments, saves, reposts, follows, proxy changes, cookie imports, or profile mutation. Phone app launch and feed scrolling are explicit operator commands only.
+The app intentionally stays local. It does not run hidden, random, or bulk engagement loops, and it does not automate follows, proxy changes, cookie imports, or profile mutation. X actions are explicit assistive commands only: the operator chooses the visible post and clicks the exact action.
 
 ## Run
 
@@ -27,12 +27,14 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Real Multilogin profile sync for browser profiles and mobile cloud phones
 - Mobile cloud-phone sync and controls can use local `xcli` even when the cloud API token is missing
 - Numbered **Start Here** workflow: choose phone, start/connect, then control X
+- Large **Assist me** button that runs the safest next step automatically: start the phone, connect control, open X, or scroll and check the visible post depending on current state
+- Optional AI draft assistant for replies and reshare text when `OPENAI_API_KEY` is set locally
 - **My Profiles** board is simplified by default and only selects which real phone the workflow controls
 - **Advanced tools** reveals the older profile console, operator queue, buckets, diagnostics, and raw phone-control panels when needed
 - Profile Console with persistent sessions, presets, safety notes, and a per-profile session log
 - **Start My X Session** opens the visible Multilogin phone, starts the automatic phone-control connector, and opens X automatically once ADB is connected
 - Built-in phone-control setup: watch the Mac clipboard for Multilogin ADB commands, connect automatically, verify, and test with a screenshot
-- Explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, screenshot, back/home, tap a screen point, and type a prepared draft into the focused Android field
+- Explicit accessibility commands on the selected phone: open viewer, open X, foreground X and scroll, check the currently visible post, like/save/repost the visible post, screenshot, back/home, tap a screen point, and type or submit a prepared comment draft after confirmation
 - Active status, warnings, auto-stop timers, and latest reports for the selected real phone
 - Profile buckets for Ready, Active, Cooldown, Setup, and Attention states
 - Advanced queues and legacy operator panels are hidden by default behind **Advanced tools** so the main screen stays focused
@@ -50,7 +52,8 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 - Profile cards show **Setup control** instead of **Open X app** until the selected phone has a verified control channel
 - Mobile cards include an explicit manual command runner for visible phone actions such as `Scroll`, disabled until Android/ADB control is available
 - Android app launch and scroll commands use ADB against the selected cloud phone
-- Draft helpers can type text you prepared into the currently focused Android field; they do not choose content or submit posts by themselves
+- Draft helpers use only text you prepared. Comment and repost submission require explicit confirmation in the dashboard.
+- AI draft helpers can use the checked visible post plus your intention to draft reply or reshare text. They only fill the draft box; they do not post.
 - **Install X** requests Multilogin's X(Twitter) app install for the mobile profile group
 - Terminal controls through `npm run mlx`
 - Empty-by-default local state, with demo data only when explicitly enabled
@@ -68,7 +71,7 @@ Create a local `.env` from `.env.example` if you want a repeatable environment s
 3. Click **Start My X Session**. The dashboard opens the visible Multilogin phone and starts watching the Mac clipboard.
 4. If phone control is not connected yet, enable ADB in Multilogin and copy the green Android icon's ADB command once.
 5. When the dashboard sees the ADB command, it connects automatically and opens the installed Android X app.
-6. Use **Open X**, **Scroll**, **Scroll 3x**, **Screenshot**, **Back**, **Home**, and **Stop** from the numbered workflow.
+6. Use **Assist me** for the least-click path, or use **Open X**, **Scroll**, **Scroll + Check**, **Check post**, **Like**, **Save**, **Repost**, **Comment**, **Screenshot**, **Back**, **Home**, and **Stop** from the numbered workflow. Use **Check post** before public actions when possible.
 7. Use **2. Your Phones** only to switch which phone the workflow controls.
 8. Use **Advanced tools** only when you need diagnostics, queues, raw ADB setup, or older operator panels.
 
@@ -86,6 +89,12 @@ For token-based cloud endpoints:
 
 ```bash
 MULTILOGIN_ENABLED=true MULTILOGIN_TOKEN="your_token" npm start
+```
+
+For AI drafting:
+
+```bash
+OPENAI_API_KEY="your_key" OPENAI_MODEL="gpt-5" npm start
 ```
 
 See `docs/multilogin-api.md` for the implemented endpoint list and boundaries.

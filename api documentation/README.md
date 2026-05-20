@@ -5,6 +5,10 @@ Last checked: May 18, 2026
 
 This folder contains local summarized Markdown references for the 14 help articles listed in the Cloud Phones help section. These are not full article mirrors; each file links back to the official Multilogin source.
 
+## API References
+
+- [Multilogin X API Postman reference](./postman-multilogin-x-api/README.md) — local Markdown export of the Postman collection from https://documenter.getpostman.com/view/28533318/2sBXcAHhmk
+
 ## Articles
 
 - [How to create Android cloud phones](./01-create-android-cloud-phones.md) — [official source](https://multilogin.com/help/en_US/cloud-phones/how-to-create-mobile-profiles)

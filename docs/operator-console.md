@@ -24,7 +24,7 @@ The Profile Console is the main work surface for local Multilogin sessions. It p
 - `Comment drafting`: focused prompts for opening posts and drafting comments.
 - `No engagement`: observation-only scroll/open prompts.
 
-Preset prompts are local instructions. They do not click, scroll, like, repost, comment, save, or follow on X or any other third-party platform.
+Preset prompts are local instructions. They do not run hidden or random engagement on X or any other third-party platform. Public X actions stay explicit: the operator checks the visible post, chooses one action, and confirms higher-risk actions.
 
 ## Main Flow
 
@@ -33,7 +33,7 @@ The default dashboard is intentionally small and numbered.
 1. **Start Here / Choose phone**: pick the Multilogin cloud phone you want to control.
 2. **Start Here / Start and connect**: click **Start My X Session**. The dashboard opens the visible phone and starts watching the Mac clipboard for Multilogin ADB commands.
 3. If phone control is not ready, enable ADB in Multilogin and copy the green Android icon's ADB command once.
-4. **Start Here / Control X**: after phone control connects, use **Open X**, **Scroll**, **Scroll 3x**, **Screenshot**, **Back**, **Home**, or **Stop**.
+4. **Start Here / Use X**: after phone control connects, use **Open X**, **Scroll**, **Scroll 3x**, **Check post**, **Like**, **Save**, **Repost**, **Comment**, **Screenshot**, **Back**, **Home**, or **Stop**.
 5. **Your Phones** only changes which phone the numbered workflow controls.
 
 Use **Advanced tools** only when you want the older Profile Console, raw Phone Control, Operator Queue, buckets, review queue, drafts, or diagnostics.
@@ -44,9 +44,11 @@ After `Done` or `Skip`, the server schedules the next prompt with a random delay
 
 ## Workbench Controls
 
-- **Start Here** is the first place to check. It has numbered sections and small `?` tooltips that explain each section.
+- **Start Here** is the first place to check. It has numbered sections and small `?` tooltips that explain each section and each high-impact action group.
 - **Phone Control** is an advanced panel. It shows which controls are available: Multilogin lifecycle controls through xcli/API, and optional Android inside-phone controls through ADB.
-- **Assistive Controller** is an advanced accessibility work surface for the selected phone. It has explicit commands for viewer, X app launch, X-aware scrolling, screenshots, Back/Home, tap point, and draft typing.
+- **Assistive Controller** is an advanced accessibility work surface for the selected phone. It has explicit commands for viewer, X app launch, X-aware scrolling, visible-post check, like/save/repost/comment actions, screenshots, Back/Home, tap point, and draft typing.
+- **Current post** stores the latest detected visible post text from **Check post** and shows recent action reports so the operator can verify what the system thinks it is acting on.
+- **AI draft assistant** can draft a reply or reshare text from the checked visible post and the operator's short intention when `OPENAI_API_KEY` is configured. It only fills the draft field; posting still requires the operator to click and confirm.
 - The **Phone Control** setup card watches the Mac clipboard for Multilogin ADB commands, verifies connected devices, and can test the control channel with a screenshot.
 - The ADB setup form accepts the two commands Multilogin shows from the green Android icon: `adb connect IP:PORT` and, when required, `adb -s IP:PORT shell glogin PASSWORD`.
 - **Your Phones** shows profiles sorted by urgency: running, starting, stopping, attention, setup, cooldown, then ready.
@@ -115,7 +117,7 @@ npm run mlx -- session-stop <session_id>
 - `Install X`: calls `xcli mobile-profiles-app-install` for Multilogin's `X(Twitter)` app and the selected mobile group.
 - `Stop`: calls both `xcli mobile-phone-shutdown` and `xcli mobile-profiles-phone-stop` because Multilogin separates visible phone shutdown from the mobile proxy-start path.
 - `Manual command`: runs one explicit Android command selected by the operator, such as `Open X app`, `Scroll review`, or `Scroll 3x`, and records the result on the profile.
-- `Assistive Controller`: runs one explicit user-chosen Android command at a time. The main Scroll buttons foreground the X Android app before swiping. Draft typing only types text into the focused field on the phone; it does not decide what to say or submit content by itself.
+- `Assistive Controller`: runs one explicit user-chosen Android command at a time. The main Scroll buttons foreground the X Android app before swiping. Visible-post actions use Android UI inspection to target the current post action row. Comment text must be supplied by the operator, and comment/repost submission asks for confirmation.
 
 Multilogin may reject the background start path with an internal server error for some profiles. In that case the dashboard falls back to `Viewer`, which is the documented cloud-phone launch path.
 

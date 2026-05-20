@@ -99,6 +99,8 @@ Example body:
 - Android X app launch: `adb shell monkey -p com.twitter.android -c android.intent.category.LAUNCHER 1`
 - Manual Android phone command: `POST /api/multilogin/profiles/:profileId/command` with `command: "open_x_app"`, `command: "scroll_prompt"`, or `command: "scroll_3"`
 - Assistive Android commands: the same command endpoint also accepts `screenshot`, `scroll_down`, `scroll_up`, `tap`, `type_text`, `key_back`, `key_home`, and `key_enter` when Android/ADB control is connected.
+- AI draft status: `GET /api/ai/status`
+- AI draft generation: `POST /api/ai/draft` with `mode`, `tone`, `postSummary`, and `intent`. Requires local `OPENAI_API_KEY`.
 
 Mobile cloud-phone sync can still work without `MULTILOGIN_TOKEN` as long as local `xcli` is logged in and the Multilogin agent/launcher is running. Browser profile cloud API calls still require the token.
 

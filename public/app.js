@@ -179,6 +179,81 @@ function showToast(message) {
   toastTimer = setTimeout(() => nodes.toast.classList.remove("visible"), 2600);
 }
 
+function loadLocalJson(key, fallback) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "");
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveLocalJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+let visiblePostState = loadLocalJson("telephones.visiblePosts", {});
+let actionHistoryState = Array.isArray(loadLocalJson("telephones.actionHistory", []))
+  ? loadLocalJson("telephones.actionHistory", [])
+  : [];
+
+function visiblePostForProfile(profileId) {
+  return visiblePostState[String(profileId || "")] || null;
+}
+
+function rememberVisiblePost(profile, post) {
+  const profileId = profile?.id || "";
+  const summary = String(post?.summary || post?.message || "").trim();
+  if (!profileId || !summary) return null;
+  const record = {
+    profileId,
+    profileName: profile.name || profileId,
+    summary,
+    actions: post.actions || {},
+    checkedAt: new Date().toISOString()
+  };
+  visiblePostState = {
+    ...visiblePostState,
+    [profileId]: record
+  };
+  saveLocalJson("telephones.visiblePosts", visiblePostState);
+  return record;
+}
+
+function recentVisiblePost(profileId) {
+  const post = visiblePostForProfile(profileId);
+  if (!post?.checkedAt) return null;
+  return Date.now() - new Date(post.checkedAt).getTime() < 2 * 60 * 1000 ? post : null;
+}
+
+function appendActionHistory(profile, command, message, post = null) {
+  if (!profile?.id) return;
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    profileId: profile.id,
+    profileName: profile.name || profile.id,
+    command,
+    message,
+    postSummary: post?.summary || visiblePostForProfile(profile.id)?.summary || "",
+    createdAt: new Date().toISOString()
+  };
+  actionHistoryState = [entry, ...actionHistoryState].slice(0, 60);
+  saveLocalJson("telephones.actionHistory", actionHistoryState);
+}
+
+function actionHistoryForProfile(profileId, limit = 4) {
+  return actionHistoryState.filter((entry) => entry.profileId === profileId).slice(0, limit);
+}
+
+function compactSummary(value, maxLength = 260) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function buttonTitle(text) {
+  return `title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}"`;
+}
+
 function canRunAndroidCommands() {
   return Boolean(phoneControlState?.android?.available);
 }
@@ -224,7 +299,44 @@ function adbSerialForProfile(profileId) {
 
 function looksLikeAdbSetup(text) {
   const value = String(text || "").trim();
-  return /\badb\s+connect\s+\S+:\d{2,5}\b/i.test(value) || /\b[A-Za-z0-9.-]+:\d{2,5}\b/.test(value);
+  return (
+    /\badb\s+connect\s+\S+:\d{2,5}\b/i.test(value) ||
+    /\badb\s+-s\s+\S+:\d{2,5}\s+shell\s+\S+/i.test(value) ||
+    /\bglogin\s+\S+/i.test(value) ||
+    /\bpassword\s*:\s*\S+/i.test(value) ||
+    /\b[A-Za-z0-9.-]+:\d{2,5}\b/.test(value) ||
+    /^[^\s"'`]{4,80}$/.test(value)
+  );
+}
+
+async function connectAdbSetupText(inputText, { profile, openXAfterConnect = false } = {}) {
+  adbSetupText = String(inputText || "").trim();
+  if (!looksLikeAdbSetup(adbSetupText)) {
+    throw new Error("Paste the ADB command from Multilogin's green Android icon, for example: adb connect IP:PORT.");
+  }
+
+  const result = await api("/api/multilogin/control-status/connect", {
+    method: "POST",
+    body: JSON.stringify({ commandText: adbSetupText })
+  });
+  const targetProfile = profile || selectedPhoneControlProfile() || selectedGuidedProfile();
+  if (targetProfile?.id && result.serial) setAdbMapping(targetProfile.id, result.serial);
+  phoneControlState = result.status;
+  stopPhoneAutoConnect();
+  render();
+
+  if (openXAfterConnect && targetProfile?.id && canRunAndroidCommandsForProfile(targetProfile.id)) {
+    await openXControl(targetProfile);
+    return result;
+  }
+
+  if (!result.status?.android?.available) {
+    showToast(result.status?.android?.error || "ADB connected, but phone control is not authenticated yet.");
+    return result;
+  }
+
+  showToast(result.authOutput ? "ADB connected and authenticated." : "ADB connected. Run auth command if Multilogin requires it.");
+  return result;
 }
 
 function stopPhoneAutoConnect() {
@@ -797,6 +909,11 @@ function renderManualCommandControls(profile) {
         <option value="open_x_app">Open X app</option>
         <option value="scroll_prompt">Scroll review</option>
         <option value="scroll_3">Scroll 3x</option>
+        <option value="inspect_visible">Check visible post</option>
+        <option value="like_visible">Like visible post</option>
+        <option value="save_visible">Save visible post</option>
+        <option value="repost_visible">Repost visible post</option>
+        <option value="comment_visible">Comment on visible post</option>
       </select>
       <button
         class="secondary manual-command-run"
@@ -1244,6 +1361,8 @@ function renderPriorityBoard() {
 }
 
 function latestProfileReport(profileId) {
+  const action = actionHistoryForProfile(profileId, 1)[0];
+  if (action) return `${action.message} ${formatRelative(action.createdAt)}`;
   const record = profileRecord(profileId);
   const session = activeSessionForProfile(profileId);
   const latestSession = (operatorState?.sessions || []).find((item) => item.profileId === profileId);
@@ -1324,9 +1443,13 @@ function renderGuidedWorkPanel() {
       : "Ready to start. This opens the phone viewer and starts the automatic connector.";
   const issueText = record?.issue ? `<p class="guided-warning">${escapeHtml(record.issue)}</p>` : "";
   const lastReport = selectedProfile ? latestProfileReport(selectedProfile.id) : "No report yet.";
+  const currentPost = selectedProfile ? visiblePostForProfile(selectedProfile.id) : null;
+  const currentPostIsRecent = Boolean(selectedProfile && recentVisiblePost(selectedProfile.id));
+  const recentActions = selectedProfile ? actionHistoryForProfile(selectedProfile.id, 3) : [];
   const startDisabled = selectedProfile ? "" : "disabled";
   const androidDisabled = androidReady ? "" : "disabled";
   const androidError = phoneControlState?.android?.error || "";
+  const guidedCommentDraft = localStorage.getItem("telephones.commentDraft") || "";
   const rawAdbDevices = phoneControlState?.android?.devices || [];
   const adbDeviceSummary = rawAdbDevices.length
     ? rawAdbDevices.map((device) => `${device.serial || "unknown"} ${device.status || ""}`.trim()).join(", ")
@@ -1338,6 +1461,18 @@ function renderGuidedWorkPanel() {
     : adbDeviceSummary
       ? `${adbNeededText} Current ADB status: ${adbDeviceSummary}.`
       : adbNeededText;
+  const assistLabel = !isRunning
+    ? "Assist me: start phone"
+    : !androidReady
+      ? "Assist me: connect phone"
+      : currentPostIsRecent
+        ? "Assist me: next post"
+        : "Assist me: open X + check post";
+  const assistHelp = !isRunning
+    ? "Starts the selected phone, opens the visible viewer, and starts watching for phone control."
+    : !androidReady
+      ? "Opens the viewer and starts the automatic connector. Copy the Multilogin ADB code once if needed."
+      : "Opens X if needed, scrolls safely, then checks the visible post so you can decide what to do.";
 
   nodes.liveAgentSummary.textContent = selectedProfile
     ? `${selectedProfile.name || selectedProfile.id} | ${statusText}`
@@ -1378,6 +1513,10 @@ function renderGuidedWorkPanel() {
         </div>
       </header>
       ${issueText}
+      <div class="guided-assist-strip">
+        <button class="guided-assist-next" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle(assistHelp)} ${startDisabled}>${escapeHtml(assistLabel)}</button>
+        <p>${escapeHtml(assistHelp)}</p>
+      </div>
       <div class="guided-actions three">
         <button class="guided-start-session" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Start My X Session</button>
         <button class="secondary guided-viewer" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Open Viewer</button>
@@ -1388,24 +1527,131 @@ function renderGuidedWorkPanel() {
         <span>${escapeHtml(autoConnecting ? "Watching Mac clipboard" : "Connector idle")}</span>
         ${androidError && !androidReady ? `<span>${escapeHtml(androidError)}</span>` : ""}
       </div>
+      ${
+        androidReady
+          ? ""
+          : `
+            <form id="guidedAdbConnectForm" class="guided-adb-form">
+              <label>
+                ADB code from Multilogin
+                <textarea id="guidedAdbSetupText" rows="2" placeholder="${escapeHtml("adb connect IP:PORT\nadb -s IP:PORT shell glogin PASSWORD")}">${escapeHtml(
+                  adbSetupText
+                )}</textarea>
+              </label>
+              <p class="guided-adb-hint">You can paste the Auth command only. If the popup only shows a password, paste just the password.</p>
+              <div class="button-row inline">
+                <button class="secondary guided-adb-paste" type="button">Paste code</button>
+                <button type="submit">Connect + Open X</button>
+              </div>
+            </form>
+          `
+      }
     </article>
 
     <article class="guided-card ${androidReady ? "ready" : "blocked"}">
       <header class="guided-card-header">
         <span class="step-number">3</span>
         <div>
-          <h3>Control X ${helpTip("These buttons send explicit Android commands to your selected phone. Open X launches the installed X app. Scroll only swipes the visible feed.")}</h3>
+          <h3>Use X ${helpTip("Use these controls after Step 2 is connected. You can open a profile by handle, check the visible post, and comment with your exact text.")}</h3>
           <p>${escapeHtml(controlText)}</p>
         </div>
       </header>
-      <div class="guided-actions control">
-        <button class="secondary guided-open-x" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Open X</button>
-        <button class="secondary guided-scroll" type="button" data-command="scroll_prompt" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Scroll</button>
-        <button class="secondary guided-scroll" type="button" data-command="scroll_3" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Scroll 3x</button>
-        <button class="secondary guided-screenshot" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Screenshot</button>
-        <button class="secondary guided-back" type="button" data-command="key_back" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Back</button>
-        <button class="secondary guided-home" type="button" data-command="key_home" data-profile-id="${escapeHtml(selectedProfileId)}" ${androidDisabled}>Home</button>
-        <button class="secondary guided-stop" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${startDisabled}>Stop</button>
+      <div class="guided-simple-actions">
+        <label>
+          Open X profile
+          <input id="guidedXProfileTarget" type="text" placeholder="@profile or x.com/profile" autocomplete="off" />
+        </label>
+        <button class="guided-open-profile" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Open this X profile inside the Android X app.")} ${androidDisabled}>Open profile</button>
+        <button class="secondary guided-scroll-check" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Scroll once, then check and store the visible post text.")} ${androidDisabled}>Scroll + Check</button>
+      </div>
+      <div class="guided-current-post ${currentPost ? "has-post" : ""}">
+        <div>
+          <strong>Current post ${helpTip("Press Check post when a post is visible. The dashboard stores the detected post text here so you can verify before acting.")}</strong>
+          <p>${escapeHtml(currentPost ? compactSummary(currentPost.summary, 360) : "No post checked yet.")}</p>
+        </div>
+        <span>${escapeHtml(currentPost ? `${currentPostIsRecent ? "recent" : "old"} | ${formatRelative(currentPost.checkedAt)}` : "check first")}</span>
+      </div>
+      <div class="guided-control-sections">
+        <section class="guided-control-group">
+          <header>
+            <strong>Move</strong>
+            <span>${helpTip("Open X launches the Android app. Scroll moves the visible feed.")}</span>
+          </header>
+          <div class="guided-actions control">
+            <button class="secondary guided-open-x" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Open the installed Android X app on this phone.")} ${androidDisabled}>Open X</button>
+            <button class="secondary guided-scroll" type="button" data-command="scroll_prompt" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Scroll the X feed once.")} ${androidDisabled}>Scroll</button>
+            <button class="secondary guided-scroll" type="button" data-command="scroll_3" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Scroll the X feed three times.")} ${androidDisabled}>Scroll 3x</button>
+          </div>
+        </section>
+        <section class="guided-control-group">
+          <header>
+            <strong>Visible post</strong>
+            <span>${helpTip("These buttons act on the post currently visible in the phone viewer. Check post first when possible.")}</span>
+          </header>
+          <div class="guided-actions control">
+            <button class="secondary guided-post-action" type="button" data-command="inspect_visible" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Read the currently visible post text into this dashboard.")} ${androidDisabled}>Check post</button>
+            <button class="secondary guided-post-action" type="button" data-command="like_visible" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Tap Like on the currently visible X post.")} ${androidDisabled}>Like</button>
+            <button class="secondary guided-post-action" type="button" data-command="save_visible" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Save the currently visible X post to Bookmarks.")} ${androidDisabled}>Save</button>
+            <button class="secondary guided-post-action" type="button" data-command="repost_visible" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Repost the visible post after confirmation.")} ${androidDisabled}>Repost</button>
+          </div>
+        </section>
+        <section class="guided-control-group comment-group">
+          <header>
+            <strong>Comment</strong>
+            <span>${helpTip("Write the exact text you want posted. The dashboard will ask for confirmation before submitting.")}</span>
+          </header>
+          <div class="guided-ai-helper">
+            <label>
+              What do you want to say?
+              <textarea id="aiDraftIntent" rows="2" placeholder="Example: agree warmly, ask a question, thank them, or write a quote-post thought."></textarea>
+            </label>
+            <label>
+              Style
+              <select id="aiDraftTone">
+                <option value="natural">Natural</option>
+                <option value="short">Short</option>
+                <option value="warm">Warm</option>
+                <option value="thoughtful">Thoughtful</option>
+                <option value="funny">Light/funny</option>
+              </select>
+            </label>
+            <div class="button-row inline">
+              <button class="secondary ai-draft-action" type="button" data-mode="reply" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Use AI to draft a reply from the checked post and your intention.")}>AI reply</button>
+              <button class="secondary ai-draft-action" type="button" data-mode="quote" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Use AI to draft text you can use when resharing or quote-posting.")}>AI reshare text</button>
+              <button class="secondary ai-draft-action" type="button" data-mode="rewrite" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Rewrite the current comment draft in the selected style.")}>Improve draft</button>
+            </div>
+            <p>AI only writes a draft. You still approve it before anything is posted.</p>
+          </div>
+          <div class="guided-comment-form">
+            <label>
+              Comment exact text
+              <textarea id="guidedCommentText" rows="2" placeholder="Write the exact comment you want posted.">${escapeHtml(guidedCommentDraft)}</textarea>
+            </label>
+            <button class="guided-post-action" type="button" data-command="comment_visible" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Reply to the currently visible post using this exact text.")} ${androidDisabled}>Comment exact text</button>
+          </div>
+        </section>
+        <section class="guided-control-group">
+          <header>
+            <strong>Phone</strong>
+            <span>${helpTip("Use these when X is on the wrong screen or you need evidence of what the phone sees.")}</span>
+          </header>
+          <div class="guided-actions control">
+            <button class="secondary guided-screenshot" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Capture a screenshot from the connected Android phone.")} ${androidDisabled}>Screenshot</button>
+            <button class="secondary guided-back" type="button" data-command="key_back" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Send Android Back.")} ${androidDisabled}>Back</button>
+            <button class="secondary guided-home" type="button" data-command="key_home" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Send Android Home.")} ${androidDisabled}>Home</button>
+            <button class="secondary guided-stop" type="button" data-profile-id="${escapeHtml(selectedProfileId)}" ${buttonTitle("Stop this Multilogin phone session and clear queued work for it.")} ${startDisabled}>Stop</button>
+          </div>
+        </section>
+      </div>
+      <div class="guided-action-history">
+        <strong>Last actions ${helpTip("Every button report appears here, so you can see what was completed.")}</strong>
+        ${
+          recentActions.length
+            ? recentActions
+                .map((item) => `<p>${escapeHtml(item.message)} <span>${escapeHtml(formatRelative(item.createdAt))}</span></p>`)
+                .join("")
+            : `<p>No actions recorded for this phone yet.</p>`
+        }
       </div>
     </article>
   `;
@@ -1551,6 +1797,10 @@ function renderAssistiveController() {
         <button class="secondary assistive-command" type="button" data-command="open_x_app" ${androidAttrs}>Open X</button>
         <button class="secondary assistive-command" type="button" data-command="scroll_prompt" data-count="1" ${androidAttrs}>Scroll</button>
         <button class="secondary assistive-command" type="button" data-command="scroll_3" data-count="3" ${androidAttrs}>Scroll 3x</button>
+        <button class="secondary assistive-command" type="button" data-command="inspect_visible" ${androidAttrs}>Check post</button>
+        <button class="secondary assistive-command" type="button" data-command="like_visible" ${androidAttrs}>Like post</button>
+        <button class="secondary assistive-command" type="button" data-command="save_visible" ${androidAttrs}>Save post</button>
+        <button class="secondary assistive-command" type="button" data-command="repost_visible" ${androidAttrs}>Repost</button>
         <button class="secondary assistive-command" type="button" data-command="screenshot" ${androidAttrs}>Screenshot</button>
         <button class="secondary assistive-command" type="button" data-command="key_back" ${androidAttrs}>Back</button>
         <button class="secondary assistive-command" type="button" data-command="key_home" ${androidAttrs}>Home</button>
@@ -1562,6 +1812,7 @@ function renderAssistiveController() {
           <textarea id="assistiveDraftText" rows="3" placeholder="Write or paste a draft. Focus the field on the phone, then use Type Draft.">${escapeHtml(draftText)}</textarea>
         </label>
         <button class="secondary assistive-command" type="button" data-command="type_text" ${androidAttrs}>Type Draft</button>
+        <button class="assistive-command" type="button" data-command="comment_visible" ${androidAttrs}>Comment</button>
       </div>
 
       <div class="assistive-tap-grid">
@@ -2225,6 +2476,81 @@ async function openXControl(profile, { message = "Opened Android X app." } = {})
   return result;
 }
 
+async function scrollAndCheckPost(profile, { count = 1 } = {}) {
+  if (!profile?.id) throw new Error("Select a phone first.");
+  if (Number(count || 0) > 0) {
+    await runManualCommandControl(profile, count > 1 ? "scroll_3" : "scroll_prompt");
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  }
+  return runManualCommandControl(profile, "inspect_visible");
+}
+
+async function generateAiDraftForProfile(profile, mode) {
+  if (!profile?.id) throw new Error("Select a phone first.");
+  const post = visiblePostForProfile(profile.id);
+  const intentField = document.querySelector("#aiDraftIntent");
+  const commentField = document.querySelector("#guidedCommentText");
+  const tone = document.querySelector("#aiDraftTone")?.value || "natural";
+  const intent = String(intentField?.value || "").trim();
+  const existingDraft = String(commentField?.value || "").trim();
+  const body = {
+    mode,
+    tone,
+    postSummary: post?.summary || "",
+    intent: mode === "rewrite" ? existingDraft || intent : intent || existingDraft
+  };
+  if (!body.postSummary && !body.intent) {
+    throw new Error("Check a post or write your idea first.");
+  }
+  const result = await api("/api/ai/draft", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  if (commentField) {
+    commentField.value = result.draft || "";
+    localStorage.setItem("telephones.commentDraft", commentField.value);
+  }
+  appendActionHistory(profile, `ai_${mode}`, `AI drafted ${mode === "quote" ? "reshare text" : "reply text"}.`, post);
+  render();
+  showToast("AI draft ready. Review it before posting.");
+  return result;
+}
+
+async function runAssistedNextStep(profile) {
+  if (!profile?.id) {
+    if (!multiloginProfilesState.profiles.length) {
+      await loadMultiloginProfiles();
+    }
+    const firstPhone = multiloginProfilesState.profiles.find((item) => item.profileType === "mobile");
+    if (firstPhone) {
+      nodes.sessionProfileSelect.value = firstPhone.id;
+      nodes.operatorProfileSelect.value = firstPhone.id;
+      profile = firstPhone;
+      render();
+    }
+  }
+
+  if (!profile?.id) throw new Error("Sync profiles, then choose a phone.");
+  selectProfileForPhoneControl(profile, { scroll: false });
+
+  const status = effectiveProfileStatus(profile);
+  const isRunning = ["running", "starting", "prepared"].includes(status);
+  if (!isRunning) {
+    await startProfileControl(profile, { message: "Started. I am watching for phone control." });
+    return "Started the phone and started watching for phone control.";
+  }
+
+  if (!canRunAndroidCommandsForProfile(profile.id)) {
+    await openViewerControl(profile, { message: "Viewer opened. I am watching for the ADB code." });
+    startPhoneAutoConnect(profile, { openXOnReady: true });
+    return "Opened the viewer and started watching for the ADB code.";
+  }
+
+  await openXControl(profile, { message: "Opened X. Now checking the next post." });
+  await scrollAndCheckPost(profile, { count: recentVisiblePost(profile.id) ? 1 : 0 });
+  return "Opened X and checked the visible post. You can now choose Like, Save, Repost, or Comment.";
+}
+
 async function tryPhoneAutoConnect(profile, { quiet = false } = {}) {
   const result = await api("/api/multilogin/control-status/auto-connect", {
     method: "POST",
@@ -2277,6 +2603,47 @@ async function runManualCommandControl(profile, command, options = {}) {
   if (!profile?.id) throw new Error("Select a profile first.");
   if (profile.profileType !== "mobile") throw new Error("Manual phone commands are only available for mobile profiles.");
   if (!canRunAndroidCommandsForProfile(profile.id)) throw new Error(androidControlReasonForProfile(profile.id));
+  const commandOptions = { ...options };
+  if (command === "comment_visible") {
+    const draft = String(
+      commandOptions.text ??
+        document.querySelector("#guidedCommentText")?.value ??
+        document.querySelector("#assistiveDraftText")?.value ??
+        localStorage.getItem("telephones.commentDraft") ??
+        ""
+    ).trim();
+    if (!draft) throw new Error("Write the exact comment text first.");
+    const checkedPost = recentVisiblePost(profile.id);
+    const postContext = checkedPost
+      ? `\n\nChecked post:\n${compactSummary(checkedPost.summary, 420)}`
+      : "\n\nNo recent post check is saved. Use Check post first if you want to verify the target.";
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Post this exact comment to the currently visible X post?${postContext}\n\nComment:\n${draft}`)
+    ) {
+      showToast("Comment cancelled.");
+      return null;
+    }
+    localStorage.setItem("telephones.commentDraft", draft);
+    commandOptions.text = draft;
+  }
+  if (command === "open_x_profile") {
+    const target = String(commandOptions.target || "").trim();
+    if (!target) throw new Error("Enter the X profile handle first, for example @openai.");
+    commandOptions.target = target;
+  }
+  if (
+    command === "repost_visible" &&
+    typeof window !== "undefined" &&
+    !window.confirm(
+      `Repost the currently visible X post on this account?${
+        recentVisiblePost(profile.id) ? `\n\nChecked post:\n${compactSummary(recentVisiblePost(profile.id).summary, 420)}` : "\n\nUse Check post first if you want to verify the target."
+      }`
+    )
+  ) {
+    showToast("Repost cancelled.");
+    return null;
+  }
 
   const result = await api(`/api/multilogin/profiles/${encodeURIComponent(profile.id)}/command`, {
     method: "POST",
@@ -2284,19 +2651,21 @@ async function runManualCommandControl(profile, command, options = {}) {
       profileName: profile.name || "",
       profileType: profile.profileType || "mobile",
       folderId: profile.folderId || "",
-      adbSerial: options.adbSerial || adbSerialForProfile(profile.id),
+      adbSerial: commandOptions.adbSerial || adbSerialForProfile(profile.id),
       command,
-      ...options
+      ...commandOptions
     })
   });
   if (result.snapshot) operatorState = result.snapshot;
   const payload = result.response?.payload || {};
+  const rememberedPost = payload.post ? rememberVisiblePost(profile, payload.post) : null;
   assistiveLastReport = {
     profileId: profile.id,
     message: payload.message || `${result.commandLabel || "Command"} completed.`,
     image: payload.imageBase64 ? `data:${payload.imageMime || "image/png"};base64,${payload.imageBase64}` : null,
     at: result.requestedAt || new Date().toISOString()
   };
+  appendActionHistory(profile, command, assistiveLastReport.message, rememberedPost);
   render();
   showToast(assistiveLastReport.message);
   return result;
@@ -2782,15 +3151,21 @@ document.addEventListener("click", async (event) => {
   const adbPasteButton = event.target.closest("#adbPasteButton");
   const adbRefreshButton = event.target.closest("#adbRefreshButton");
   const guidedSyncButton = event.target.closest(".guided-sync");
+  const guidedAssistButton = event.target.closest(".guided-assist-next");
   const guidedStartButton = event.target.closest(".guided-start-session");
   const guidedViewerButton = event.target.closest(".guided-viewer");
   const guidedAutoConnectButton = event.target.closest(".guided-auto-connect");
   const guidedOpenXButton = event.target.closest(".guided-open-x");
+  const guidedOpenProfileButton = event.target.closest(".guided-open-profile");
   const guidedScrollButton = event.target.closest(".guided-scroll");
+  const guidedScrollCheckButton = event.target.closest(".guided-scroll-check");
+  const guidedPostActionButton = event.target.closest(".guided-post-action");
+  const aiDraftButton = event.target.closest(".ai-draft-action");
   const guidedScreenshotButton = event.target.closest(".guided-screenshot");
   const guidedBackButton = event.target.closest(".guided-back");
   const guidedHomeButton = event.target.closest(".guided-home");
   const guidedStopButton = event.target.closest(".guided-stop");
+  const guidedAdbPasteButton = event.target.closest(".guided-adb-paste");
 
   if (verifyButton) {
     try {
@@ -2875,6 +3250,19 @@ document.addEventListener("click", async (event) => {
     }
   }
 
+  if (guidedAssistButton) {
+    try {
+      const profile = multiloginProfileById(guidedAssistButton.dataset.profileId) || selectedGuidedProfile();
+      guidedAssistButton.disabled = true;
+      const message = await runAssistedNextStep(profile);
+      showToast(message);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedAssistButton.disabled = false;
+    }
+  }
+
   if (guidedStartButton) {
     try {
       const profile = multiloginProfileById(guidedStartButton.dataset.profileId) || selectedGuidedProfile();
@@ -2908,12 +3296,39 @@ document.addEventListener("click", async (event) => {
     }
   }
 
+  if (guidedAdbPasteButton) {
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard paste is not available in this browser.");
+      adbSetupText = await navigator.clipboard.readText();
+      const textArea = document.querySelector("#guidedAdbSetupText");
+      const advancedTextArea = document.querySelector("#adbSetupText");
+      if (textArea) textArea.value = adbSetupText;
+      if (advancedTextArea) advancedTextArea.value = adbSetupText;
+      showToast(adbSetupText ? "ADB code pasted. Click Connect + Open X." : "Clipboard is empty.");
+    } catch (error) {
+      showToast(error.message);
+    }
+  }
+
   if (guidedOpenXButton) {
     try {
       const profile = multiloginProfileById(guidedOpenXButton.dataset.profileId) || selectedGuidedProfile();
       await openXControl(profile);
     } catch (error) {
       showToast(error.message);
+    }
+  }
+
+  if (guidedOpenProfileButton) {
+    try {
+      const profile = multiloginProfileById(guidedOpenProfileButton.dataset.profileId) || selectedGuidedProfile();
+      const target = document.querySelector("#guidedXProfileTarget")?.value || "";
+      guidedOpenProfileButton.disabled = true;
+      await runManualCommandControl(profile, "open_x_profile", { target });
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedOpenProfileButton.disabled = false;
     }
   }
 
@@ -2926,6 +3341,47 @@ document.addEventListener("click", async (event) => {
       showToast(error.message);
     } finally {
       guidedScrollButton.disabled = false;
+    }
+  }
+
+  if (guidedScrollCheckButton) {
+    try {
+      const profile = multiloginProfileById(guidedScrollCheckButton.dataset.profileId) || selectedGuidedProfile();
+      guidedScrollCheckButton.disabled = true;
+      await scrollAndCheckPost(profile, { count: 1 });
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedScrollCheckButton.disabled = false;
+    }
+  }
+
+  if (guidedPostActionButton) {
+    try {
+      const profile = multiloginProfileById(guidedPostActionButton.dataset.profileId) || selectedGuidedProfile();
+      const command = guidedPostActionButton.dataset.command;
+      const options =
+        command === "comment_visible"
+          ? { text: document.querySelector("#guidedCommentText")?.value || "" }
+          : {};
+      guidedPostActionButton.disabled = true;
+      await runManualCommandControl(profile, command, options);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      guidedPostActionButton.disabled = false;
+    }
+  }
+
+  if (aiDraftButton) {
+    try {
+      const profile = multiloginProfileById(aiDraftButton.dataset.profileId) || selectedGuidedProfile();
+      aiDraftButton.disabled = true;
+      await generateAiDraftForProfile(profile, aiDraftButton.dataset.mode || "reply");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      aiDraftButton.disabled = false;
     }
   }
 
@@ -3260,7 +3716,7 @@ document.addEventListener("click", async (event) => {
     const tapY = Number(document.querySelector("#assistiveTapY")?.value || 50);
     const options = {
       count: Number(assistiveCommandButton.dataset.count || 1),
-      text: command === "type_text" ? draft : "",
+      text: command === "type_text" || command === "comment_visible" ? draft : "",
       xRatio: command === "tap" ? tapX / 100 : undefined,
       yRatio: command === "tap" ? tapY / 100 : undefined
     };
@@ -3372,29 +3828,21 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("input", (event) => {
   if (event.target?.id === "adbSetupText") adbSetupText = event.target.value;
+  if (event.target?.id === "guidedAdbSetupText") adbSetupText = event.target.value;
+  if (event.target?.id === "guidedCommentText") localStorage.setItem("telephones.commentDraft", event.target.value);
 });
 
 document.addEventListener("submit", async (event) => {
-  if (event.target?.id !== "adbConnectForm") return;
+  if (!["adbConnectForm", "guidedAdbConnectForm"].includes(event.target?.id)) return;
   event.preventDefault();
 
-  const textArea = event.target.querySelector("#adbSetupText");
+  const guided = event.target.id === "guidedAdbConnectForm";
+  const textArea = event.target.querySelector(guided ? "#guidedAdbSetupText" : "#adbSetupText");
   adbSetupText = textArea?.value || "";
-  if (!looksLikeAdbSetup(adbSetupText)) {
-    showToast("Paste the ADB command from Multilogin's green Android icon, for example: adb connect IP:PORT.");
-    return;
-  }
 
   try {
-    const result = await api("/api/multilogin/control-status/connect", {
-      method: "POST",
-      body: JSON.stringify({ commandText: adbSetupText })
-    });
-    const profile = selectedPhoneControlProfile();
-    if (profile?.id && result.serial) setAdbMapping(profile.id, result.serial);
-    phoneControlState = result.status;
-    render();
-    showToast(result.authOutput ? "ADB connected and authenticated." : "ADB connected. Run auth command if Multilogin requires it.");
+    const profile = guided ? selectedGuidedProfile() : selectedPhoneControlProfile();
+    await connectAdbSetupText(adbSetupText, { profile, openXAfterConnect: guided });
   } catch (error) {
     showToast(error.message);
   }

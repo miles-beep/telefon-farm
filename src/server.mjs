@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +66,32 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
 const port = Number(process.env.PORT || 5177);
+let serverEnvLoaded = false;
+
+function loadServerEnv() {
+  if (serverEnvLoaded) return;
+  serverEnvLoaded = true;
+  const envPath = path.resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (Object.hasOwn(process.env, key)) continue;
+    process.env[key] = rawValue.trim().replace(/^['"]|['"]$/g, "");
+  }
+}
+
+function aiConfig() {
+  loadServerEnv();
+  return {
+    enabled: Boolean(process.env.OPENAI_API_KEY),
+    model: process.env.OPENAI_MODEL || "gpt-5",
+    timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS || 20000)
+  };
+}
 
 if (process.env.TELEPHONES_DEMO_DATA === "true") {
   seedDemoData();
@@ -178,6 +205,77 @@ async function readJsonBody(request) {
   return JSON.parse(raw);
 }
 
+function responseOutputText(payload) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const chunks = [];
+  for (const item of payload?.output || []) {
+    for (const content of item?.content || []) {
+      if (typeof content?.text === "string") chunks.push(content.text);
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
+async function generateAiDraft(body = {}) {
+  const config = aiConfig();
+  if (!config.enabled) {
+    throw new Error("AI draft assistant is not configured. Add OPENAI_API_KEY to .env and restart the dashboard.");
+  }
+
+  const postSummary = String(body.postSummary || "").trim().slice(0, 2800);
+  const intent = String(body.intent || "").trim().slice(0, 1000);
+  const mode = String(body.mode || "reply").trim();
+  const tone = String(body.tone || "natural").trim();
+  if (!postSummary && !intent) {
+    throw new Error("Check a post or write what you want to say before asking AI.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const prompt = [
+    `Mode: ${mode}`,
+    `Tone: ${tone}`,
+    postSummary ? `Visible post context:\n${postSummary}` : "",
+    intent ? `User intention:\n${intent}` : "",
+    "Write one authentic first-person draft the user can approve before posting. Keep it concise, specific, and human. Do not invent facts. Do not include hashtags unless explicitly requested. Return only the draft text."
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  try {
+    const result = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: config.model,
+        instructions:
+          "You are an assistive writing helper for a disabled user controlling their own X/Twitter account. Help draft text only. Never claim to have posted anything. Avoid harassment, spam, impersonation, or deceptive engagement.",
+        input: prompt,
+        store: false
+      }),
+      signal: controller.signal
+    });
+
+    const payload = await result.json().catch(() => ({}));
+    if (!result.ok) {
+      throw new Error(payload?.error?.message || `OpenAI request failed with ${result.status}.`);
+    }
+    const draft = responseOutputText(payload).trim();
+    if (!draft) throw new Error("AI returned an empty draft.");
+    return {
+      draft,
+      model: config.model,
+      mode,
+      tone
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function contentTypeFor(filePath) {
   const ext = path.extname(filePath);
   if (ext === ".html") return "text/html; charset=utf-8";
@@ -246,13 +344,36 @@ async function executeManualMobileCommand(profileId, body = {}) {
   } else if (command === "scroll_3") {
     label = "Scroll 3x";
     result = await scrollAndroidXApp({ profileId, adbSerial: body.adbSerial, count: 3 });
-  } else if (["screenshot", "scroll_down", "scroll_up", "tap", "type_text", "key_back", "key_home", "key_enter"].includes(command)) {
+  } else if (
+    [
+      "screenshot",
+      "scroll_down",
+      "scroll_up",
+      "tap",
+      "type_text",
+      "inspect_visible",
+      "open_x_profile",
+      "like_visible",
+      "save_visible",
+      "repost_visible",
+      "comment_visible",
+      "key_back",
+      "key_home",
+      "key_enter"
+    ].includes(command)
+  ) {
     const labels = {
       screenshot: "Screenshot",
       scroll_down: "Scroll down",
       scroll_up: "Scroll up",
       tap: "Tap",
       type_text: "Type draft",
+      inspect_visible: "Check visible post",
+      open_x_profile: "Open X profile",
+      like_visible: "Like visible post",
+      save_visible: "Save visible post",
+      repost_visible: "Repost visible post",
+      comment_visible: "Comment on visible post",
       key_back: "Back",
       key_home: "Home",
       key_enter: "Enter"
@@ -263,6 +384,7 @@ async function executeManualMobileCommand(profileId, body = {}) {
       adbSerial: body.adbSerial,
       command,
       text: body.text,
+      target: body.target,
       x: body.x,
       y: body.y,
       xRatio: body.xRatio,
@@ -380,6 +502,24 @@ async function handleApi(request, response, url) {
 
   if (method === "GET" && url.pathname === "/api/operator") {
     sendJson(response, 200, getOperatorSnapshot());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/ai/status") {
+    const config = aiConfig();
+    sendJson(response, 200, {
+      enabled: config.enabled,
+      model: config.model
+    });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/ai/draft") {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, {
+      requestedAt: new Date().toISOString(),
+      ...(await generateAiDraft(body))
+    });
     return;
   }
 

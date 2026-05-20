@@ -1,0 +1,590 @@
+[
+  {
+    "folder": "Launcher",
+    "name": "Start Browser Profile",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v2/profile/f/:folder_id/p/:profile_id/start?automation_type=selenium, puppeteer, playwright&headless_mode=false,true"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Start Quick Profile v3",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v3/profile/quick"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Start Quick Profile",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v2/profile/quick"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Stop Browser Profile",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/stop/p/:profile_id"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Stop All Profiles",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/stop_all?type=all, regular, quick"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Get Version",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/version"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Get Profile Status",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/status/p/:profile_id"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Get All Profiles Status",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/statuses"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Get All Quick Profiles Status",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/quick/statuses"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Loaded Browser Cores",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/loaded_browser_cores"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Browser Core List",
+    "method": "GET",
+    "url": "https://api.multilogin.com/bcs/core/list"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Load Browser Core",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/load_browser_core?browser_type=mimic,stealthfox&version=123"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Delete Browser Core",
+    "method": "DELETE",
+    "url": "https://launcher.mlx.yt:45001/api/v1/delete_browser_core?browser_type=mimic,stealthfox&version=116"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Validate Proxy",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/proxy/validate"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Cookie Import",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/cookie_import"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Cookie Export",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/cookie_export"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Convert QBP to Profile",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/quick/save"
+  },
+  {
+    "folder": "Launcher",
+    "name": "Get QBP status",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/quick/statuses"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Sign In",
+    "method": "POST",
+    "url": "https://api.multilogin.com/user/signin"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Refresh Token (Switch Workspace)",
+    "method": "POST",
+    "url": "https://api.multilogin.com/user/refresh_token"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Revoke Token",
+    "method": "POST",
+    "url": "https://api.multilogin.com/user/revoke_tokens"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Change Password",
+    "method": "POST",
+    "url": "https://api.multilogin.com/user/change_password"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Workspaces",
+    "method": "GET",
+    "url": "https://api.multilogin.com/user/workspaces"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "User Token List",
+    "method": "GET",
+    "url": "https://api.multilogin.com/user/tokens_list"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Restrictions",
+    "method": "GET",
+    "url": "https://api.multilogin.com/workspace/restrictions"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Folders",
+    "method": "GET",
+    "url": "https://api.multilogin.com/workspace/folders"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Folders For User",
+    "method": "GET",
+    "url": "https://api.multilogin.com/workspace/folders_for_user?email=foo@bar.com"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Statistics",
+    "method": "GET",
+    "url": "https://api.multilogin.com/workspace/statistics"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Automation Token",
+    "method": "GET",
+    "url": "https://api.multilogin.com/workspace/automation_token?expiration_period=1h,3h,5h,16h,24h,48h,1w,2w,3w,1mo,no_exp"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Create Folder",
+    "method": "POST",
+    "url": "https://api.multilogin.com/workspace/folder_create"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Update Folder",
+    "method": "POST",
+    "url": "https://api.multilogin.com/workspace/folder_update"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Remove Folders",
+    "method": "POST",
+    "url": "https://api.multilogin.com/workspace/folders_remove"
+  },
+  {
+    "folder": "Profile Access Management",
+    "name": "Workspace Leave",
+    "method": "POST",
+    "url": "https://api.multilogin.com/workspace/leave"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Tag Create",
+    "method": "POST",
+    "url": "https://api.multilogin.com/tag/create"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Tag Update",
+    "method": "POST",
+    "url": "https://api.multilogin.com/tag/create"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Tag Remove",
+    "method": "POST",
+    "url": "https://api.multilogin.com/tag/remove"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Tag Assign",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/tag/assign"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Tag Search",
+    "method": "POST",
+    "url": "https://api.multilogin.com/tag/remove"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Create",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/create"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Search",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/search"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Remove",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/remove"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Update",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/update"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Move",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/move"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Partial Update",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/partial_update"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Restore",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/restore"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Metas",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/metas"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Summary",
+    "method": "GET",
+    "url": "https://api.multilogin.com/profile/summary?meta_id=uuid"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Clone",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/clone"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Profile Convert",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/:profile_id/convert"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Screen Resolution",
+    "method": "GET",
+    "url": "https://api.multilogin.com/fpb/resolutions"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Set Profile Password",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/security/enable"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Remove Password",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/security/disable"
+  },
+  {
+    "folder": "Profile Management",
+    "name": "Log In Profile",
+    "method": "POST",
+    "url": "https://api.multilogin.com/profile/login"
+  },
+  {
+    "folder": "Browser Profile Data",
+    "name": "Unlock Locked Profiles",
+    "method": "GET",
+    "url": "https://api.multilogin.com/bpds/profile/unlock_profiles"
+  },
+  {
+    "folder": "Proxy",
+    "name": "Generate Proxy",
+    "method": "POST",
+    "url": "https://profile-proxy.multilogin.com/v1/proxy/connection_url"
+  },
+  {
+    "folder": "Proxy",
+    "name": "Fetch Proxy Data",
+    "method": "GET",
+    "url": "https://profile-proxy.multilogin.com/v1/user"
+  },
+  {
+    "folder": "Pre-made Cookies",
+    "name": "Target Website List",
+    "method": "GET",
+    "url": "https://cookies.multilogin.com/api/v1/cookies/metadata/websites"
+  },
+  {
+    "folder": "Pre-made Cookies",
+    "name": "Create Cookies Metadata",
+    "method": "POST",
+    "url": "https://cookies.multilogin.com/api/v1/cookies/metadata"
+  },
+  {
+    "folder": "Pre-made Cookies",
+    "name": "Cookies List",
+    "method": "GET",
+    "url": "https://cookies.multilogin.com/api/v1/cookies/<your profile id>"
+  },
+  {
+    "folder": "Pre-made Cookies",
+    "name": "Update Cookies Metadata",
+    "method": "PUT",
+    "url": "https://cookies.multilogin.com/api/v1/cookies/metadata"
+  },
+  {
+    "folder": "Script Runner",
+    "name": "Start Browser Profile with Selenium",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/f/:folder_id/p/:profile_id/start?automation_type=selenium"
+  },
+  {
+    "folder": "Script Runner",
+    "name": "Start Script Runner",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/run_script"
+  },
+  {
+    "folder": "Script Runner",
+    "name": "Stop Script Runner",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/stop_script"
+  },
+  {
+    "folder": "Script Runner",
+    "name": "Script List",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/scripts"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Profile Export",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/:profile_id/export"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Export Status by Profile",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/exports/:export_id/status"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Export Status All",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/exports/statuses"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Profile Import",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/import"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Import Status by Profile",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/imports/:import_id/status"
+  },
+  {
+    "folder": "Profile Import/Export",
+    "name": "Import Status All",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/imports/statuses"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Upload Object",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/object_storage/upload"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Create and Upload",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/object_storage/create_and_upload"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Object Profile Usage",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/object_profile_usages?object_id=uuid"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Get Object Types",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/types"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Get Statistics for Objects",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/statistics"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Get Objects meta",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/metas"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Get Object meta by ID",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/:id/meta"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Delete Object",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/:id/delete"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Restore Object",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/:id/restore"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Cloud to Local",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/object_storage/local_to_cloud"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Local to Cloud",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/object_storage/local_to_cloud"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Download Object",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/object_storage/<id_upload>/download"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Create Extension",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/create_extension_from_url"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Enable Extension",
+    "method": "POST",
+    "url": "https://api.multilogin.com/api/v1/resources/:object_id/enable_for_profiles"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "Disable Extension",
+    "method": "POST",
+    "url": "https://api.multilogin.com/api/v1/resources/:object_id/disable_for_profiles"
+  },
+  {
+    "folder": "Object Storage",
+    "name": "List of Objects per profile",
+    "method": "GET",
+    "url": "https://api.multilogin.com/api/v1/resources/profile_object_usages?object_type=object_type&profile_id=profile_id"
+  },
+  {
+    "folder": "Bookmark Management",
+    "name": "Export Bookmarks",
+    "method": "GET",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/:profile_id/bookmarks/export"
+  },
+  {
+    "folder": "Bookmark Management",
+    "name": "Import Bookmarks",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/:profile/bookmarks/import"
+  },
+  {
+    "folder": "Bookmark Management",
+    "name": "Copy Bookmarks",
+    "method": "POST",
+    "url": "https://launcher.mlx.yt:45001/api/v1/profile/:profile_id/bookmarks/copy/:source_profile_id"
+  },
+  {
+    "folder": "2FA",
+    "name": "Set up 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/setup_2fa"
+  },
+  {
+    "folder": "2FA",
+    "name": "Enable 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/enable_2fa"
+  },
+  {
+    "folder": "2FA",
+    "name": "Verify 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/verify_2fa_otp"
+  },
+  {
+    "folder": "2FA",
+    "name": "Set up new device for 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/add_2fa_device"
+  },
+  {
+    "folder": "2FA",
+    "name": "Get Devices for 2FA",
+    "method": "GET",
+    "url": "https://app.multilogin.com/user/get_2fa_devices"
+  },
+  {
+    "folder": "2FA",
+    "name": "Get Backup Codes for 2FA",
+    "method": "GET",
+    "url": "https://app.multilogin.com/user/backup_codes"
+  },
+  {
+    "folder": "2FA",
+    "name": "Revoke device for 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/revoke_2fa_device"
+  },
+  {
+    "folder": "2FA",
+    "name": "Enable/Disable 2FA for Workspace",
+    "method": "POST",
+    "url": "https://app.multilogin.com/workspace/update_2fa"
+  },
+  {
+    "folder": "2FA",
+    "name": "Disable 2FA",
+    "method": "POST",
+    "url": "https://app.multilogin.com/user/disable_2fa"
+  }
+]

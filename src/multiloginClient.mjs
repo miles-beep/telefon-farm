@@ -531,7 +531,34 @@ async function resolveAdbSerial({ profileId, adbSerial } = {}, env = process.env
 async function runAdbShell({ profileId, adbSerial, shellArgs } = {}, env = process.env) {
   const serial = await resolveAdbSerial({ profileId, adbSerial }, env);
   const output = await runAdb(["-s", serial, "shell", ...shellArgs.map(String)], env);
+  if (/you should run glogin|glogin to login|not authenticated/i.test(output)) {
+    throw new Error("ADB is connected, but Multilogin glogin authentication is missing. Paste the second ADB line from Multilogin: adb -s IP:PORT shell glogin PASSWORD.");
+  }
   return { serial, output };
+}
+
+async function verifyAdbShellAccess(serial, env = process.env) {
+  try {
+    const output = await runAdb(["-s", serial, "shell", "wm", "size"], env);
+    if (/you should run glogin|glogin to login|not authenticated/i.test(output)) {
+      return {
+        serial,
+        ok: false,
+        error: "glogin authentication is missing"
+      };
+    }
+    return {
+      serial,
+      ok: /Physical size:|\d+x\d+/i.test(output),
+      error: /Physical size:|\d+x\d+/i.test(output) ? "" : output || "ADB shell check failed"
+    };
+  } catch (error) {
+    return {
+      serial,
+      ok: false,
+      error: error.message
+    };
+  }
 }
 
 function parseAndroidScreenSize(value) {
@@ -547,6 +574,312 @@ async function getAndroidScreenSize({ profileId, adbSerial } = {}, env = process
   return {
     serial: result.serial,
     ...parseAndroidScreenSize(result.output)
+  };
+}
+
+function decodeXmlValue(value) {
+  return String(value || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#10;/g, "\n")
+    .replace(/&#xA;/gi, "\n")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function parseBounds(value) {
+  const match = String(value || "").match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+  if (!match) return null;
+  const left = Number(match[1]);
+  const top = Number(match[2]);
+  const right = Number(match[3]);
+  const bottom = Number(match[4]);
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+    centerX: Math.round((left + right) / 2),
+    centerY: Math.round((top + bottom) / 2)
+  };
+}
+
+function parseAndroidUiNodes(xml) {
+  return [...String(xml || "").matchAll(/<node\b([^>]*)>/g)]
+    .map((match) => {
+      const attrs = {};
+      for (const attr of match[1].matchAll(/([\w:-]+)="([^"]*)"/g)) {
+        attrs[attr[1]] = decodeXmlValue(attr[2]);
+      }
+      const bounds = parseBounds(attrs.bounds);
+      return bounds ? { ...attrs, bounds } : null;
+    })
+    .filter(Boolean);
+}
+
+async function dumpAndroidUi({ profileId, adbSerial } = {}, env = process.env) {
+  const serial = await resolveAdbSerial({ profileId, adbSerial }, env);
+  await runAdb(["-s", serial, "shell", "uiautomator", "dump", "/sdcard/window.xml"], env);
+  const xml = await runAdb(["-s", serial, "exec-out", "cat", "/sdcard/window.xml"], env);
+  return {
+    serial,
+    xml,
+    nodes: parseAndroidUiNodes(xml)
+  };
+}
+
+function screenHeightFromNodes(nodes) {
+  return Math.max(...nodes.map((node) => node.bounds.bottom).filter(Number.isFinite), 1920);
+}
+
+function findVisibleTweetActionNode(nodes, actionId) {
+  const height = screenHeightFromNodes(nodes);
+  const targetY = height * 0.58;
+  const candidates = nodes.filter(
+    (node) =>
+      node["resource-id"] === `com.twitter.android:id/${actionId}` &&
+      node.clickable === "true" &&
+      node.enabled === "true" &&
+      node.bounds.centerY > height * 0.08 &&
+      node.bounds.centerY < height * 0.92
+  );
+  candidates.sort((left, right) => Math.abs(left.bounds.centerY - targetY) - Math.abs(right.bounds.centerY - targetY));
+  return candidates[0] || null;
+}
+
+function compactPostText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim();
+}
+
+function findVisibleTweetRow(nodes, actionNode) {
+  const rows = nodes.filter((node) => node["resource-id"] === "com.twitter.android:id/row" && compactPostText(node["content-desc"]));
+  const containingRows = rows.filter(
+    (node) =>
+      actionNode &&
+      node.bounds.left <= actionNode.bounds.centerX &&
+      node.bounds.right >= actionNode.bounds.centerX &&
+      node.bounds.top <= actionNode.bounds.centerY &&
+      node.bounds.bottom >= actionNode.bounds.centerY
+  );
+  containingRows.sort((left, right) => left.bounds.width * left.bounds.height - right.bounds.width * right.bounds.height);
+  if (containingRows[0]) return containingRows[0];
+
+  const height = screenHeightFromNodes(nodes);
+  const targetY = height * 0.5;
+  rows.sort((left, right) => Math.abs(left.bounds.centerY - targetY) - Math.abs(right.bounds.centerY - targetY));
+  return rows[0] || null;
+}
+
+function visibleTweetSummaryFromNodes(nodes) {
+  const actionNode =
+    findVisibleTweetActionNode(nodes, "inline_like") ||
+    findVisibleTweetActionNode(nodes, "inline_retweet") ||
+    findVisibleTweetActionNode(nodes, "inline_bookmark");
+  const row = findVisibleTweetRow(nodes, actionNode);
+  const summary = compactPostText(row?.["content-desc"] || "");
+  return {
+    summary,
+    rowBounds: row?.bounds || null,
+    actions: {
+      reply: Boolean(findVisibleTweetActionNode(nodes, "inline_reply")),
+      repost: Boolean(findVisibleTweetActionNode(nodes, "inline_retweet")),
+      like: Boolean(findVisibleTweetActionNode(nodes, "inline_like")),
+      save: Boolean(findVisibleTweetActionNode(nodes, "inline_bookmark")),
+      share: Boolean(findVisibleTweetActionNode(nodes, "inline_twitter_share"))
+    }
+  };
+}
+
+async function inspectVisibleXPost({ profileId, adbSerial } = {}, env = process.env) {
+  await openAndroidXApp({ profileId, adbSerial }, env);
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_APP_FOCUS_DELAY_MS || 800)));
+  const ui = await dumpAndroidUi({ profileId, adbSerial }, env);
+  const post = visibleTweetSummaryFromNodes(ui.nodes);
+  if (!post.summary) {
+    throw new Error("Could not identify a visible X post. Scroll until a post action row is visible, then try again.");
+  }
+  return {
+    serial: ui.serial,
+    ...post
+  };
+}
+
+function findClickableNodeForText(nodes, matcher) {
+  const labelNode = nodes.find((node) => matcher(node.text || node["content-desc"] || ""));
+  if (!labelNode) return null;
+  const clickableParents = nodes
+    .filter(
+      (node) =>
+        node.clickable === "true" &&
+        node.enabled === "true" &&
+        node.bounds.left <= labelNode.bounds.centerX &&
+        node.bounds.right >= labelNode.bounds.centerX &&
+        node.bounds.top <= labelNode.bounds.centerY &&
+        node.bounds.bottom >= labelNode.bounds.centerY
+    )
+    .sort((left, right) => left.bounds.width * left.bounds.height - right.bounds.width * right.bounds.height);
+  return clickableParents[0] || labelNode;
+}
+
+async function tapNode({ profileId, adbSerial, node } = {}, env = process.env) {
+  const result = await runAdbShell({
+    profileId,
+    adbSerial,
+    shellArgs: ["input", "tap", node.bounds.centerX, node.bounds.centerY]
+  }, env);
+  return {
+    serial: result.serial,
+    point: {
+      x: node.bounds.centerX,
+      y: node.bounds.centerY
+    },
+    output: result.output
+  };
+}
+
+async function tapVisibleTweetAction({ profileId, adbSerial, actionId, label } = {}, env = process.env) {
+  await openAndroidXApp({ profileId, adbSerial }, env);
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_APP_FOCUS_DELAY_MS || 800)));
+  const ui = await dumpAndroidUi({ profileId, adbSerial }, env);
+  const node = findVisibleTweetActionNode(ui.nodes, actionId);
+  if (!node) throw new Error(`Could not find ${label} on the currently visible X post. Scroll until the post action row is visible, then try again.`);
+  const post = visibleTweetSummaryFromNodes(ui.nodes);
+  if (actionId === "inline_bookmark" && /remove|saved|bookmarked/i.test(node["content-desc"] || "")) {
+    throw new Error("This visible post already appears to be saved.");
+  }
+  const tap = await tapNode({ profileId, adbSerial: ui.serial, node }, env);
+  return {
+    serial: tap.serial,
+    point: tap.point,
+    uiAction: actionId,
+    label,
+    post
+  };
+}
+
+async function repostVisibleTweet({ profileId, adbSerial } = {}, env = process.env) {
+  const retweetTap = await tapVisibleTweetAction({
+    profileId,
+    adbSerial,
+    actionId: "inline_retweet",
+    label: "Repost"
+  }, env);
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_REPOST_MENU_DELAY_MS || 700)));
+  const ui = await dumpAndroidUi({ profileId, adbSerial: retweetTap.serial }, env);
+  if (ui.nodes.some((node) => /^undo repost$/i.test(node.text || node["content-desc"] || ""))) {
+    throw new Error("This visible post already appears to be reposted.");
+  }
+  const repostNode = findClickableNodeForText(ui.nodes, (value) => /^repost$/i.test(String(value || "").trim()));
+  if (!repostNode) {
+    throw new Error("Repost menu opened, but the Repost confirmation button was not found.");
+  }
+  const confirmTap = await tapNode({ profileId, adbSerial: ui.serial, node: repostNode }, env);
+  return {
+    serial: confirmTap.serial,
+    point: confirmTap.point,
+    uiAction: "inline_retweet",
+    label: "Repost",
+    post: retweetTap.post
+  };
+}
+
+function findReplyTextField(nodes) {
+  const textFields = nodes
+    .filter(
+      (node) =>
+        node.enabled === "true" &&
+        (/EditText/i.test(node.class || "") ||
+          /tweet_text|composer|compose|text/i.test(node["resource-id"] || "") ||
+          /post text|tweet text|what is happening|what's happening|add a comment|write a reply/i.test(`${node.text || ""} ${node["content-desc"] || ""}`))
+    )
+    .filter((node) => node.bounds.width > 40 && node.bounds.height > 20);
+
+  textFields.sort((left, right) => {
+    const leftEdit = /EditText/i.test(left.class || "") ? 0 : 1;
+    const rightEdit = /EditText/i.test(right.class || "") ? 0 : 1;
+    if (leftEdit !== rightEdit) return leftEdit - rightEdit;
+    return right.bounds.width * right.bounds.height - left.bounds.width * left.bounds.height;
+  });
+
+  return textFields[0] || null;
+}
+
+function findReplySubmitButton(nodes) {
+  const labelMatcher = (value) => /^(reply|post)$/i.test(String(value || "").trim()) || /^post reply$/i.test(String(value || "").trim());
+  const height = screenHeightFromNodes(nodes);
+  const direct = nodes
+    .filter(
+      (node) =>
+        node.clickable === "true" &&
+        node.enabled === "true" &&
+        labelMatcher(node.text || node["content-desc"] || "") &&
+        node.bounds.centerY < height * 0.45
+    )
+    .sort((left, right) => right.bounds.right - left.bounds.right || left.bounds.top - right.bounds.top)[0];
+  if (direct) return direct;
+
+  const byLabel = findClickableNodeForText(nodes, labelMatcher);
+  if (byLabel?.enabled === "true" && byLabel.bounds.centerY < height * 0.55) return byLabel;
+
+  const byId = nodes
+    .filter(
+      (node) =>
+        node.clickable === "true" &&
+        node.enabled === "true" &&
+        /button_tweet|tweet_button|composer.*tweet|button_post|post_button/i.test(node["resource-id"] || "")
+    )
+    .sort((left, right) => right.bounds.right - left.bounds.right || left.bounds.top - right.bounds.top)[0];
+  return byId || null;
+}
+
+async function typeAndroidText({ profileId, adbSerial, text } = {}, env = process.env) {
+  const safeText = encodeAndroidInputText(text);
+  if (!safeText) throw new Error("Add draft text before typing.");
+  return runAdbShell({ profileId, adbSerial, shellArgs: ["input", "text", safeText] }, env);
+}
+
+async function commentVisibleTweet({ profileId, adbSerial, text } = {}, env = process.env) {
+  const draft = String(text || "").trim();
+  if (!draft) throw new Error("Write the exact comment text first.");
+  if (draft.length > 500) throw new Error("Comment draft is too long for the assistive typer. Keep it under 500 characters.");
+
+  const replyTap = await tapVisibleTweetAction({
+    profileId,
+    adbSerial,
+    actionId: "inline_reply",
+    label: "Reply"
+  }, env);
+
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_REPLY_COMPOSER_DELAY_MS || 900)));
+  const composerUi = await dumpAndroidUi({ profileId, adbSerial: replyTap.serial }, env);
+  const textField = findReplyTextField(composerUi.nodes);
+  if (textField) {
+    await tapNode({ profileId, adbSerial: composerUi.serial, node: textField }, env);
+    await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_REPLY_FOCUS_DELAY_MS || 300)));
+  }
+
+  const typed = await typeAndroidText({ profileId, adbSerial: composerUi.serial, text: draft }, env);
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_REPLY_TYPE_DELAY_MS || 900)));
+  const submitUi = await dumpAndroidUi({ profileId, adbSerial: typed.serial }, env);
+  const submitNode = findReplySubmitButton(submitUi.nodes);
+  if (!submitNode) {
+    throw new Error("Comment was typed, but the Reply/Post button was not found. Check the phone viewer and submit manually if the draft looks correct.");
+  }
+
+  const submitTap = await tapNode({ profileId, adbSerial: submitUi.serial, node: submitNode }, env);
+  return {
+    serial: submitTap.serial,
+    point: submitTap.point,
+    characters: draft.length,
+    uiAction: "inline_reply",
+    label: "Comment",
+    post: replyTap.post
   };
 }
 
@@ -574,6 +907,58 @@ function encodeAndroidInputText(text) {
     .replace(/([&<>;|*~"'`()[\]{}$])/g, "\\$1");
 }
 
+function normalizeXProfileTarget(value) {
+  const raw = String(value || "").trim();
+  const match =
+    raw.match(/(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})(?:[/?#].*)?$/i) ||
+    raw.match(/^@?([A-Za-z0-9_]{1,15})$/);
+  if (!match?.[1]) {
+    throw new Error("Enter an X profile handle, for example @openai or https://x.com/openai.");
+  }
+  const handle = match[1].replace(/^@/, "");
+  return {
+    handle,
+    appUri: `twitter://user?screen_name=${handle}`,
+    webUri: `https://x.com/${handle}`
+  };
+}
+
+async function openXProfile({ profileId, adbSerial, target } = {}, env = process.env) {
+  const parsed = normalizeXProfileTarget(target);
+  await openAndroidXApp({ profileId, adbSerial }, env);
+  await new Promise((resolve) => setTimeout(resolve, Number(env.MULTILOGIN_ADB_APP_FOCUS_DELAY_MS || 800)));
+  const first = await runAdbShell(
+    {
+      profileId,
+      adbSerial,
+      shellArgs: ["am", "start", "-a", "android.intent.action.VIEW", "-d", parsed.appUri, "com.twitter.android"]
+    },
+    env
+  );
+  if (/unable|error|exception|not found|no activity/i.test(first.output || "")) {
+    const fallback = await runAdbShell(
+      {
+        profileId,
+        adbSerial: first.serial,
+        shellArgs: ["am", "start", "-a", "android.intent.action.VIEW", "-d", parsed.webUri, "com.twitter.android"]
+      },
+      env
+    );
+    return {
+      serial: fallback.serial,
+      handle: parsed.handle,
+      uri: parsed.webUri,
+      output: fallback.output
+    };
+  }
+  return {
+    serial: first.serial,
+    handle: parsed.handle,
+    uri: parsed.appUri,
+    output: first.output
+  };
+}
+
 function parseAdbSetupInput(payload = {}) {
   const raw = [
     payload.commandText,
@@ -587,18 +972,25 @@ function parseAdbSetupInput(payload = {}) {
     .join("\n");
   const connectMatch = raw.match(/\badb\s+connect\s+([^\s;"']+)/i);
   const authMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+glogin\s+([^\s]+)/i);
+  const authPasswordOnlyMatch = raw.match(/\badb\s+-s\s+([^\s]+)\s+shell\s+(?!glogin\b)([^\s]+)/i);
   const requiresConnectCommand = Boolean(payload.requireConnectCommand);
-  if (requiresConnectCommand && !connectMatch && !authMatch) {
+  if (requiresConnectCommand && !connectMatch && !authMatch && !authPasswordOnlyMatch) {
     throw new Error("Clipboard does not contain a Multilogin ADB command yet. Copy the command that starts with adb connect or adb -s.");
   }
   const address =
     String(payload.address || "").trim() ||
     connectMatch?.[1] ||
     authMatch?.[1] ||
+    authPasswordOnlyMatch?.[1] ||
     (requiresConnectCommand ? "" : raw.match(/\b([A-Za-z0-9.-]+:\d{2,5})\b/)?.[1]) ||
     "";
-  const serial = authMatch?.[1] || address;
-  const password = String(payload.password || "").trim() || authMatch?.[2] || raw.match(/\bglogin\s+([^\s]+)/i)?.[1] || "";
+  const serial = authMatch?.[1] || authPasswordOnlyMatch?.[1] || address;
+  const password =
+    String(payload.password || "").trim() ||
+    authMatch?.[2] ||
+    authPasswordOnlyMatch?.[2] ||
+    raw.match(/\bglogin\s+([^\s]+)/i)?.[1] ||
+    "";
 
   if (!address) {
     throw new Error("Paste an ADB connect command or address from Multilogin, for example adb connect IP:PORT.");
@@ -615,6 +1007,23 @@ function parseAdbSetupInput(payload = {}) {
     serial,
     password
   };
+}
+
+function extractAdbPasswordOnly(payload = {}) {
+  const raw = [
+    payload.commandText,
+    payload.authCommand,
+    payload.password ? `password: ${payload.password}` : ""
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  const password =
+    String(payload.password || "").trim() ||
+    raw.match(/\bglogin\s+([^\s]+)/i)?.[1] ||
+    raw.match(/\bpassword\s*:\s*([^\s]+)/i)?.[1] ||
+    (/^[^\s"'`]{4,80}$/.test(raw) && !/\badb\b|https?:\/\//i.test(raw) ? raw : "");
+  return password;
 }
 
 async function readMacClipboard(env = process.env) {
@@ -701,14 +1110,22 @@ export async function getPhoneControlStatus(env = process.env) {
     const stdout = await runAdb(["devices"], env);
     status.android.installed = true;
     status.android.devices = parseAdbDeviceRows(stdout);
-    status.android.connectedDevices = status.android.devices
+    const adbConnectedDevices = status.android.devices
       .filter((device) => device.status === "device")
       .map((device) => device.serial);
+    status.android.shellChecks = [];
+    for (const serial of adbConnectedDevices) {
+      status.android.shellChecks.push(await verifyAdbShellAccess(serial, env));
+    }
+    status.android.connectedDevices = status.android.shellChecks.filter((device) => device.ok).map((device) => device.serial);
     status.android.available = status.android.connectedDevices.length > 0;
     if (!status.android.available) {
-      status.android.error = status.android.devices.length
-        ? "ADB is installed, but no authorized cloud phone is connected."
-        : "ADB is installed, but no cloud phone is connected.";
+      const missingAuth = status.android.shellChecks.find((device) => /glogin|authentication/i.test(device.error || ""));
+      status.android.error = missingAuth
+        ? "ADB is connected, but Multilogin glogin authentication is missing. Paste both ADB lines from Multilogin, including the line with glogin."
+        : status.android.devices.length
+          ? "ADB is installed, but no authorized cloud phone is connected."
+          : "ADB is installed, but no cloud phone is connected.";
     }
   } catch (error) {
     status.android.error = error.message;
@@ -719,7 +1136,22 @@ export async function getPhoneControlStatus(env = process.env) {
 }
 
 export async function connectAndroidPhoneControl(payload = {}, env = process.env) {
-  const setup = parseAdbSetupInput(payload);
+  let setup;
+  try {
+    setup = parseAdbSetupInput(payload);
+  } catch (error) {
+    const password = extractAdbPasswordOnly(payload);
+    if (!password) throw error;
+    const devices = await listConnectedAdbDevices(env);
+    if (devices.length !== 1) {
+      throw new Error("Paste the full Auth command, or connect exactly one ADB phone before pasting only the glogin password.");
+    }
+    setup = {
+      address: devices[0],
+      serial: devices[0],
+      password
+    };
+  }
   const connectOutput = await runAdb(["connect", setup.address], env);
   let authOutput = "";
 
@@ -1145,6 +1577,9 @@ export async function openAndroidXApp({ profileId, adbSerial, packageName } = {}
     },
     env
   );
+  if (/No activities found|monkey aborted|Error:|not found|unable to resolve/i.test(output)) {
+    throw new Error(`Android could not launch ${androidPackage}: ${output}`);
+  }
 
   return {
     requestedAt: new Date().toISOString(),
@@ -1210,7 +1645,7 @@ export async function openMultiloginMobileX(options = {}, env = process.env) {
 }
 
 export async function runAndroidAssistiveCommand(
-  { profileId, adbSerial, command, text, x, y, xRatio, yRatio, count = 1, direction = "down" } = {},
+  { profileId, adbSerial, command, text, target, x, y, xRatio, yRatio, count = 1, direction = "down" } = {},
   env = process.env
 ) {
   if (!profileId) {
@@ -1313,10 +1748,146 @@ export async function runAndroidAssistiveCommand(
     };
   }
 
+  if (normalizedCommand === "inspect_visible") {
+    const post = await inspectVisibleXPost({ profileId, adbSerial }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Check visible post",
+        method: "adb",
+        base: "local",
+        path: "adb shell uiautomator dump"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: post.summary,
+          adbSerial: post.serial,
+          post
+        }
+      },
+      output: "ok"
+    };
+  }
+
+  if (normalizedCommand === "open_x_profile") {
+    const opened = await openXProfile({ profileId, adbSerial, target }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Open X profile",
+        method: "adb",
+        base: "local",
+        path: "adb shell am start # twitter profile"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: `Opened @${opened.handle} in the Android X app.`,
+          adbSerial: opened.serial,
+          handle: opened.handle,
+          uri: opened.uri
+        }
+      },
+      output: opened.output || "ok"
+    };
+  }
+
+  const visibleTweetActions = {
+    like_visible: {
+      actionId: "inline_like",
+      label: "Like visible post",
+      message: "Tapped Like on the currently visible X post."
+    },
+    save_visible: {
+      actionId: "inline_bookmark",
+      label: "Save visible post",
+      message: "Saved the currently visible X post to Bookmarks."
+    }
+  };
+  if (Object.hasOwn(visibleTweetActions, normalizedCommand)) {
+    const action = visibleTweetActions[normalizedCommand];
+    const tap = await tapVisibleTweetAction({ profileId, adbSerial, actionId: action.actionId, label: action.label }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: action.label,
+        method: "adb",
+        base: "local",
+        path: `adb shell input tap # ${action.actionId}`
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: action.message,
+          adbSerial: tap.serial,
+          point: tap.point,
+          post: tap.post
+        }
+      },
+      output: tap.output || "ok"
+    };
+  }
+
+  if (normalizedCommand === "repost_visible") {
+    const repost = await repostVisibleTweet({ profileId, adbSerial }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Repost visible post",
+        method: "adb",
+        base: "local",
+        path: "adb shell input tap # inline_retweet + Repost"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: "Reposted the currently visible X post.",
+          adbSerial: repost.serial,
+          point: repost.point,
+          post: repost.post
+        }
+      },
+      output: "ok"
+    };
+  }
+
+  if (normalizedCommand === "comment_visible") {
+    const comment = await commentVisibleTweet({ profileId, adbSerial, text }, env);
+    return {
+      requestedAt: now,
+      request: {
+        label: "Comment on visible post",
+        method: "adb",
+        base: "local",
+        path: "adb shell input tap # inline_reply + input text + Reply"
+      },
+      response: {
+        ok: true,
+        httpStatus: 200,
+        statusText: "OK",
+        payload: {
+          message: "Posted your comment on the currently visible X post.",
+          adbSerial: comment.serial,
+          point: comment.point,
+          characters: comment.characters,
+          post: comment.post
+        }
+      },
+      output: "ok"
+    };
+  }
+
   if (normalizedCommand === "type_text") {
-    const safeText = encodeAndroidInputText(text);
-    if (!safeText) throw new Error("Add draft text before typing.");
-    const result = await runAdbShell({ profileId, adbSerial, shellArgs: ["input", "text", safeText] }, env);
+    const result = await typeAndroidText({ profileId, adbSerial, text }, env);
     return {
       requestedAt: now,
       request: {

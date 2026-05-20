@@ -61,8 +61,10 @@ Shows:
 - A numbered 3-step workflow:
   - `1 Choose phone`: select one real Multilogin mobile profile.
   - `2 Start and connect`: open the visible cloud phone and start the auto connector.
-  - `3 Control X`: open X, scroll, screenshot, Back/Home, or stop after phone control is ready.
-- Small `?` tooltips explaining the intention of each section.
+  - `3 Use X`: open X, scroll, check the visible post, like/save/repost/comment on the visible post, screenshot, Back/Home, or stop after phone control is ready.
+- Small `?` tooltips explaining the intention of each section and grouped action area.
+- The current-post panel stores the latest **Check post** result and the recent action report for that profile.
+- The AI draft assistant can draft reply or reshare text from the checked post and the user's short intention when `OPENAI_API_KEY` is configured. It does not post by itself.
 - Local running/starting/stopping state
 - Auto-stop countdown
 - Last report or warning
@@ -70,7 +72,7 @@ Shows:
 - Advanced-only Phone Control capability split:
   - Multilogin/xcli lifecycle controls: sync, start, viewer, stop, app install
   - Android inside-phone controls: Open X app, Scroll review, Scroll 3x through ADB
-- Advanced-only Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
+- Advanced-only Assistive Controller for the selected profile: open viewer, open X, foreground X and scroll, check visible post, like/save/repost/comment visible post, screenshot, Back/Home, tap by screen percentage, and type a prepared draft into the currently focused Android field.
 - Copy the commands Multilogin shows from the green Android icon:
 
 ```txt
@@ -108,7 +110,7 @@ Current names and behavior:
 - `Open X app`: launches the installed Android X app through ADB for the selected mobile cloud phone. The dashboard disables this when ADB is not connected and keeps Viewer available through Multilogin/xcli.
 - `Stop`: runs both mobile shutdown paths and sets local cooldown.
 - `Task`: queues a manual review prompt.
-- `Assistive Controller`: explicit accessibility commands only. Draft typing assists the operator with prepared text; it does not generate or submit public engagement by itself.
+- `Assistive Controller`: explicit accessibility commands only. Draft typing assists the operator with prepared text. Comment text is supplied by the operator, and comment/repost submission asks for confirmation.
 
 Important: Multilogin/xcli does not currently expose a documented command for launching one installed Android app or swiping inside the phone. The dashboard does not control the computer with mouse/Accessibility permissions for X. App launch and scroll commands use ADB against the Android cloud phone.
 
@@ -172,6 +174,8 @@ Do not implement hidden engagement automation against X or other real social pla
 - Visible phone launch
 - User-clicked X app launch
 - User-clicked scroll/back/home/tap/type helper commands
+- User-clicked current visible-post actions: check, like, save, repost with confirmation, and comment with operator-supplied text plus confirmation
+- AI-assisted drafting for comment or reshare text, with operator review before any posting
 - Manual prompts
 - Local reports and notes
 - Review queues
@@ -180,10 +184,7 @@ Do not implement hidden engagement automation against X or other real social pla
 
 Avoid:
 
-- Auto-like
-- Auto-comment
-- Auto-repost
-- Auto-save
+- Hidden or random like/comment/repost/save loops
 - Auto-follow
 - Hidden/random scrolling or browsing that tries to evade platform detection
 
